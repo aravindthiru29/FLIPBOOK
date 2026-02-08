@@ -247,6 +247,17 @@ def delete_book(book_id):
     
     return jsonify({'success': True})
 
+@app.route('/api/book/<int:book_id>', methods=['PUT'])
+def update_book(book_id):
+    book = Book.query.get_or_404(book_id)
+    data = request.json
+    
+    if 'title' in data:
+        book.title = data['title']
+        
+    db.session.commit()
+    return jsonify({'success': True, 'title': book.title})
+
 @app.route('/api/note/<int:note_id>', methods=['DELETE'])
 def delete_note(note_id):
     note = Note.query.get_or_404(note_id)

@@ -60,6 +60,10 @@
                         class="bg-white text-blue-600 px-6 py-3 rounded-xl font-bold shadow-xl border border-blue-100 hover:bg-blue-600 hover:text-white transition-all scale-90 group-hover:scale-100 uppercase text-xs tracking-widest">
                         Open
                     </a>
+                    <button onclick="editBook('{{ book.id }}', '{{ book.title|replace('\'', '\\\'') }}')"
+                        class="bg-white text-yellow-500 w-10 h-10 flex items-center justify-center rounded-xl shadow-xl border border-yellow-50 hover:bg-yellow-500 hover:text-white transition-all scale-90 group-hover:scale-100">
+                        <i class="fas fa-pen"></i>
+                    </button>
                     <button onclick="deleteBook('{{ book.id }}', this)"
                         class="bg-white text-red-500 w-10 h-10 flex items-center justify-center rounded-xl shadow-xl border border-red-50 hover:bg-red-500 hover:text-white transition-all scale-90 group-hover:scale-100">
                         <i class="fas fa-trash"></i>
