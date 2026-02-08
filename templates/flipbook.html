@@ -1,0 +1,588 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-screen flex flex-col bg-[#d1d5db] font-sans selection:bg-blue-100 overflow-hidden">
+
+    <!-- Premium Header -->
+    <div class="px-8 py-4 flex items-center justify-between z-50 bg-white/80 backdrop-blur-md shadow-sm">
+        <div class="flex items-center space-x-4">
+            <a href="/" class="text-gray-400 hover:text-gray-900 transition-colors">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <h1 class="text-sm font-bold text-gray-800 truncate max-w-[400px]">
+                {{ book_data.title }}
+            </h1>
+        </div>
+
+        <div class="flex items-center space-x-6">
+            <div class="flex items-center px-4 py-2 bg-gray-100 rounded-full space-x-4 border border-gray-200">
+                <!-- Annotation Tools -->
+                <button id="note-mode-btn" onclick="toggleMode('note')"
+                    class="text-gray-500 hover:text-yellow-600 transition-colors" title="Add Note">
+                    <i class="fas fa-sticky-note"></i>
+                </button>
+                <button id="highlight-mode-btn" onclick="toggleMode('highlight')"
+                    class="text-gray-500 hover:text-yellow-600 transition-colors" title="Highlight">
+                    <i class="fas fa-highlighter"></i>
+                </button>
+                <div class="w-px h-4 bg-gray-300"></div>
+
+                <button onclick="toggleWarmth()" class="text-gray-500 hover:text-orange-600 transition-colors"
+                    title="Reading Mode">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <div class="w-px h-4 bg-gray-300"></div>
+                <div class="text-[11px] font-black text-gray-500 uppercase tracking-widest">
+                    <span id="current-pages-range" class="text-blue-600">1</span> / {{ book_data.page_count }}
+                </div>
+            </div>
+
+            <button id="fullscreen-btn" class="p-2 text-gray-400 hover:text-gray-900 transition-colors">
+                <i class="fas fa-expand"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Flipbook Workspace -->
+    <div
+        class="flex-1 relative flex items-center justify-center p-4 md:p-12 overflow-hidden bg-gradient-to-b from-[#e5e7eb] to-[#d1d5db]">
+
+        <!-- Navigation Arrows -->
+        <button id="prev-btn"
+            class="absolute left-6 md:left-12 z-40 w-16 h-16 rounded-full bg-white/20 hover:bg-white/90 text-gray-400 hover:text-gray-900 shadow-xl transition-all active:scale-95 hidden md:flex items-center justify-center backdrop-blur-sm group">
+            <i class="fas fa-chevron-left text-2xl group-hover:-translate-x-1 transition-transform"></i>
+        </button>
+
+        <button id="next-btn"
+            class="absolute right-6 md:right-12 z-40 w-16 h-16 rounded-full bg-white/20 hover:bg-white/90 text-gray-400 hover:text-gray-900 shadow-xl transition-all active:scale-95 hidden md:flex items-center justify-center backdrop-blur-sm group">
+            <i class="fas fa-chevron-right text-2xl group-hover:translate-x-1 transition-transform"></i>
+        </button>
+
+        <!-- The Book Architecture -->
+        <div id="book-viewport" class="relative group">
+            <!-- Shadow Depth -->
+            <div class="absolute inset-0 -bottom-12 bg-black/40 blur-[60px] rounded-[100px] scale-x-90 opacity-40">
+            </div>
+
+            <div id="flipbook-outer">
+                <!-- Binding/Spine Detail -->
+                <div class="book-spine">
+                    <div class="spine-thread"></div>
+                    <div class="spine-thread"></div>
+                    <div class="spine-thread"></div>
+                </div>
+
+                <div id="flipbook">
+                    <!-- Front Cover -->
+                    <div class="hardcover front-cover">
+                        <div class="cover-content">
+                            <div class="gold-emboss mb-4">
+                                <i class="fas fa-book-open text-4xl"></i>
+                            </div>
+                            <h2 class="text-xl font-serif font-bold text-center px-8">{{ book_data.title }}</h2>
+                            <div
+                                class="mt-12 text-[10px] uppercase tracking-[0.3em] opacity-40 font-bold border-t border-white/20 pt-4">
+                                Interactive Edition
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Page 1 (Internal Cover or Table of Contents) -->
+                    <div class="page first-internal" data-page="0">
+                        <div class="page-texture"></div>
+                        <img src="/api/book/{{ book_data.id }}/page/0" class="w-full h-full object-contain">
+                        <div class="annotations-layer absolute inset-0 z-20"></div>
+                    </div>
+
+                    <!-- All Remaining PDF Pages -->
+                    {% for i in range(1, book_data.page_count) %}
+                    <div class="page" data-page="{{ i }}">
+                        <div class="page-texture"></div>
+                        <img {% if i < 4 %} src="/api/book/{{ book_data.id }}/page/{{ i }}" {% else %}
+                            data-src="/api/book/{{ book_data.id }}/page/{{ i }}" {% endif %}
+                            class="w-full h-full object-contain opacity-0 transition-opacity duration-700"
+                            onload="this.style.opacity=1;">
+                        <div class="page-number text-[10px] text-gray-400 font-mono absolute bottom-4 right-4">{{ i + 1
+                            }}</div>
+                        <div class="annotations-layer absolute inset-0 z-20"></div>
+                    </div>
+                    {% endfor %}
+
+                    <!-- Optional Blank Page if count is odd (to keep back cover on the right side) -->
+                    {% if (book_data.page_count + 1) % 2 != 0 %}
+                    <div class="page blank-page">
+                        <div class="page-texture"></div>
+                        <div class="w-full h-full bg-white"></div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Back Cover -->
+                    <div class="hardcover back-cover">
+                        <div class="w-full h-full flex flex-col items-center justify-center space-y-4">
+                            <div class="w-12 h-1 bg-white/20 rounded-full"></div>
+                            <div class="text-[11px] font-black tracking-widest uppercase opacity-30">The End</div>
+                            <div class="w-12 h-1 bg-white/20 rounded-full"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Annotations */
+    .note-marker {
+        position: absolute;
+        width: 24px;
+        height: 24px;
+        background: #fde047;
+        color: #854d0e;
+        border-radius: 4px;
+        box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 100;
+        font-size: 12px;
+        transition: transform 0.2s;
+    }
+
+    .note-marker:hover {
+        transform: scale(1.1);
+        z-index: 101;
+    }
+
+    .highlight-marker {
+        position: absolute;
+        width: 100px;
+        height: 20px;
+        background: rgba(255, 255, 0, 0.3);
+        border-bottom: 2px solid rgba(255, 255, 0, 0.5);
+        cursor: pointer;
+        z-index: 90;
+    }
+
+    .highlight-marker:hover {
+        background: rgba(255, 255, 0, 0.5);
+    }
+
+    .delete-annotation {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        width: 16px;
+        height: 16px;
+        background: red;
+        color: white;
+        border-radius: 50%;
+        font-size: 10px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .note-marker:hover .delete-annotation,
+    .highlight-marker:hover .delete-annotation {
+        display: flex;
+    }
+
+    .toolbar-active {
+        background-color: #fef08a !important;
+        color: #854d0e !important;
+    }
+
+    #flipbook {
+        width: 1000px;
+        height: 700px;
+    }
+
+    .page {
+        background: #fff;
+        position: relative;
+        box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.05);
+    }
+
+    .page-texture {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.15;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        z-index: 10;
+    }
+
+    .page::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 60px;
+        background: linear-gradient(to right, rgba(0, 0, 0, 0.1), transparent);
+        pointer-events: none;
+        opacity: 0.7;
+    }
+
+    .even.page::after {
+        left: auto;
+        right: 0;
+        background: linear-gradient(to left, rgba(0, 0, 0, 0.1), transparent);
+    }
+
+    #flipbook-outer {
+        position: relative;
+        padding: 6px;
+        background: #111;
+        border-radius: 1px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 50px 100px rgba(0, 0, 0, 0.3);
+    }
+
+    .hardcover {
+        background: #1e293b;
+        color: white;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='leather'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.05' numOctaves='1'/%3E%3CfeDiffuseLighting lighting-color='rgb(30,41,59)' surfaceScale='1'%3E%3CfeDistantLight azimuth='45' elevation='60'/%3E%3C/feDiffuseLighting%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23leather)'/%3E%3C/svg%3E");
+    }
+
+    .front-cover {
+        border-radius: 0 12px 12px 0 !important;
+    }
+
+    .back-cover {
+        border-radius: 12px 0 0 12px !important;
+    }
+
+    .cover-content {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(rgba(26, 25, 25, 0.3), transparent);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .gold-emboss {
+        color: #fbbf24;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        opacity: 0.8;
+    }
+
+    .book-spine {
+        position: absolute;
+        top: 20px;
+        bottom: 20px;
+        left: 50%;
+        width: 4px;
+        transform: translateX(-50%);
+        background: #d0d1d4;
+        z-index: 500;
+        border-radius: 4px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-around;
+        padding: 40px 0;
+        box-shadow: 0 0 10px rgba(70, 70, 70, 0.5);
+    }
+
+    .spine-thread {
+        width: 10%;
+        height: 1px;
+        background: rgba(113, 113, 113, 0.1);
+    }
+
+    .warm-mode img {
+        filter: sepia(0.3) contrast(1.1) brightness(0.95);
+    }
+
+    .warm-mode .page {
+        background: #fdf6e3 !important;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/turn.js/3/turn.min.js"></script>
+
+<script>
+    const BOOK_ID = '{{ book_data.id }}';
+    let currentMode = null; // 'note', 'highlight', or null
+    let allNotes = [];
+    let allHighlights = [];
+
+    $(document).ready(function () {
+        const $flipbook = $('#flipbook');
+        const $rangeDisplay = $('#current-pages-range');
+        const PDF_PAGE_COUNT = parseInt('{{ book_data.page_count }}') || 0;
+
+        // --- PRELOAD DATA ---
+        function preloadAnnotations() {
+            Promise.all([
+                fetch(`/api/book/${BOOK_ID}/notes`).then(r => r.json()),
+                fetch(`/api/book/${BOOK_ID}/highlights`).then(r => r.json())
+            ]).then(([notes, highlights]) => {
+                allNotes = notes;
+                allHighlights = highlights;
+                // Reload current view to show initial annotations
+                const currentView = $flipbook.turn('view');
+                load(currentView);
+            });
+        }
+
+        // --- ANNOTATION HELPERS ---
+        function loadAnnotations(pageNum, $pageEl) {
+            // Clear old annotations to avoid duplicates
+            $pageEl.find('.note-marker, .highlight-marker').remove();
+
+            // Render from cache
+            allNotes.filter(n => n.page_number == pageNum).forEach(n => {
+                renderNote(n, $pageEl);
+            });
+            allHighlights.filter(h => h.page_number == pageNum).forEach(h => {
+                renderHighlight(h, $pageEl);
+            });
+        }
+
+        function renderNote(note, $container) {
+            const $layer = $container.find('.annotations-layer');
+            const $el = $(`
+                <div class="note-marker" style="left:${note.x}%; top:${note.y}%" title="${note.content}">
+                    <i class="fas fa-sticky-note text-[10px]"></i>
+                    <div class="delete-annotation" onclick="deleteNote(${note.id}, this); event.stopPropagation();">
+                        <i class="fas fa-times"></i>
+                    </div>
+                </div>
+            `);
+            $el.click((e) => {
+                if (currentMode) return;
+                alert(`Note: ${note.content}`);
+                e.stopPropagation();
+            });
+            $layer.append($el);
+        }
+
+        function renderHighlight(hl, $container) {
+            const $layer = $container.find('.annotations-layer');
+            const rect = hl.coordinates;
+            const $el = $(`
+                <div class="highlight-marker" style="left:${rect.x}%; top:${rect.y}%">
+                    <div class="delete-annotation" onclick="deleteHighlight(${hl.id}, this); event.stopPropagation();">
+                        <i class="fas fa-times"></i>
+                    </div>
+                </div>
+            `);
+            $layer.append($el);
+        }
+
+        let loaded = new Set();
+        function load(view) {
+            view.forEach(v => {
+                if (v == 0) return;
+                const $p = $flipbook.find('.page').eq(v - 2);
+
+                // Image Lazy Load
+                const $img = $p.find('img');
+                if ($img.length && !loaded.has(v)) {
+                    const src = $img.attr('data-src');
+                    if (src) {
+                        $img.attr('src', src).removeAttr('data-src');
+                    }
+                    loaded.add(v);
+                }
+
+                // Load annotations for this page
+                const pageNum = $p.data('page');
+                if (pageNum !== undefined) {
+                    loadAnnotations(pageNum, $p);
+                }
+            });
+        }
+
+        // Initialize Flipbook
+        try {
+            $flipbook.turn({
+                width: 1000,
+                height: 700,
+                display: 'double',
+                autoCenter: true,
+                gradients: true,
+                elevation: 100,
+                duration: 1000,
+                when: {
+                    turning: function (e, page, view) {
+                        load(view);
+                    },
+                    turned: function (e, page, view) {
+                        let pdfPages = view.map(v => v - 2).filter(v => v >= 0 && v < PDF_PAGE_COUNT);
+                        let displayTxt = "Cover";
+                        if (pdfPages.length > 0) {
+                            displayTxt = pdfPages.length > 1 ? `${pdfPages[0] + 1} - ${pdfPages[1] + 1}` : `${pdfPages[0] + 1}`;
+                        } else if (view.includes($flipbook.turn('pages'))) {
+                            displayTxt = "End";
+                        }
+                        $rangeDisplay.text(displayTxt);
+                    }
+                }
+            });
+        } catch (e) {
+            console.error("Turn.js error:", e);
+        }
+
+        // Controls
+        $('#prev-btn').click(() => $flipbook.turn("previous"));
+        $('#next-btn').click(() => $flipbook.turn("next"));
+
+        $(window).bind('keydown', function (e) {
+            if (e.keyCode === 37) $flipbook.turn('previous');
+            else if (e.keyCode === 39) $flipbook.turn('next');
+        });
+
+        $('#fullscreen-btn').click(() => {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+            else document.exitFullscreen();
+        });
+
+        // Swipe and Mouse Drag Support
+        let startX = 0;
+        let isDown = false;
+
+        $flipbook.on('touchstart mousedown', (e) => {
+            // Ignore if clicking on interactive elements or if in annotation mode
+            if ($(e.target).closest('button, .note-marker, .highlight-marker, a, .delete-annotation').length) return;
+            if (currentMode) return;
+
+            isDown = true;
+            startX = e.type === 'touchstart' ? e.originalEvent.touches[0].clientX : e.pageX;
+        });
+
+        $(window).on('touchend mouseup', (e) => {
+            if (!isDown) return;
+            isDown = false;
+
+            // Handle both touch and mouse events
+            let endX;
+            if (e.type === 'touchend') {
+                endX = e.originalEvent.changedTouches[0].clientX;
+            } else {
+                endX = e.pageX;
+            }
+
+            // Drag threshold
+            if (startX - endX > 100) $flipbook.turn('next');      // Drag Left -> Next
+            if (endX - startX > 100) $flipbook.turn('previous');  // Drag Right -> Previous
+        });
+
+        // --- INTERACTION ---
+        $(document).on('click', '.annotations-layer', function (e) {
+            if (!currentMode) return;
+
+            const $layer = $(this);
+            const $page = $layer.closest('.page');
+            const pageNum = $page.data('page');
+
+            // Calculate % position relative to layer size
+            const offset = $layer.offset();
+            const x = ((e.pageX - offset.left) / $layer.width()) * 100;
+            const y = ((e.pageY - offset.top) / $layer.height()) * 100;
+
+            if (currentMode === 'note') {
+                const content = prompt("Enter note content:");
+                if (content) {
+                    fetch(`/api/book/${BOOK_ID}/notes`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ page_number: pageNum, content, x, y })
+                    })
+                        .then(r => r.json())
+                        .then(d => {
+                            if (d.success) {
+                                const newNote = { id: d.id, page_number: pageNum, content, x, y };
+                                allNotes.push(newNote);
+                                renderNote(newNote, $page);
+                            }
+                        });
+                }
+                setMode(null);
+            } else if (currentMode === 'highlight') {
+                fetch(`/api/book/${BOOK_ID}/highlights`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        page_number: pageNum,
+                        coordinates: { x, y, w: 20, h: 4 }, // Simplified fixed highlight
+                        color: 'yellow'
+                    })
+                })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.success) {
+                            const newHighlight = { id: d.id, page_number: pageNum, coordinates: { x, y } };
+                            allHighlights.push(newHighlight);
+                            renderHighlight(newHighlight, $page);
+                        }
+                    });
+                setMode(null);
+            }
+        });
+
+        // Initial load
+        setTimeout(() => {
+            load($flipbook.turn("view"));
+            preloadAnnotations();
+        }, 300);
+    });
+
+    // --- GLOBAL HELPERS ---
+    function toggleMode(mode) {
+        if (currentMode === mode) setMode(null);
+        else setMode(mode);
+    }
+
+    function setMode(mode) {
+        currentMode = mode;
+        // UI Reset
+        $('#note-mode-btn').removeClass('text-yellow-600 bg-yellow-100');
+        $('#highlight-mode-btn').removeClass('text-yellow-600 bg-yellow-100');
+
+        if (mode === 'note') {
+            $('#note-mode-btn').addClass('text-yellow-600 bg-yellow-100');
+            document.body.style.cursor = 'crosshair';
+        } else if (mode === 'highlight') {
+            $('#highlight-mode-btn').addClass('text-yellow-600 bg-yellow-100');
+            document.body.style.cursor = 'text';
+        } else {
+            document.body.style.cursor = 'default';
+        }
+    }
+
+    function deleteNote(id, el) {
+        if (!confirm("Delete this note?")) return;
+        fetch(`/api/note/${id}`, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) {
+                    $(el).closest('.note-marker').remove();
+                    allNotes = allNotes.filter(n => n.id !== id);
+                }
+            });
+    }
+
+    function deleteHighlight(id, el) {
+        if (!confirm("Remove highlight?")) return;
+        fetch(`/api/highlight/${id}`, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) {
+                    $(el).closest('.highlight-marker').remove();
+                    allHighlights = allHighlights.filter(h => h.id !== id);
+                }
+            });
+    }
+
+    function toggleWarmth() {
+        $('body').toggleClass('warm-mode');
+    }
+</script>
+{% endblock %}

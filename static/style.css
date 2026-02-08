@@ -1,0 +1,159 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap");
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Inter", sans-serif;
+}
+
+body {
+  background: #eef0f2;
+  overflow: hidden;
+}
+
+/* ============================= */
+/* BOOK CONTAINER */
+/* ============================= */
+
+.book-container {
+  perspective: 3000px;
+  width: 90vw;
+  max-width: 1200px;
+  height: 75vh;
+  margin: auto;
+  position: relative;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Floating Shadow */
+.book-container::after {
+  content: "";
+  position: absolute;
+  bottom: -55px;
+  width: 80%;
+  height: 35px;
+  background: radial-gradient(rgba(0, 0, 0, 0.35), transparent 70%);
+  filter: blur(18px);
+  z-index: -1;
+}
+
+/* ============================= */
+/* BOOK BODY */
+/* ============================= */
+
+#book {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+}
+
+/* Spine Shadow */
+#book::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 90px;
+  height: 100%;
+  transform: translateX(-50%);
+  background: radial-gradient(rgba(0, 0, 0, 0.25), transparent 70%);
+  z-index: 200;
+}
+
+/* ============================= */
+/* PAGE WRAPPERS */
+/* ============================= */
+
+.page-wrapper {
+  position: absolute;
+  width: 50%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 1s ease-in-out;
+}
+
+/* Right Pages */
+.page-wrapper.right {
+  right: 0;
+  transform-origin: left center;
+}
+
+/* Left Pages */
+.page-wrapper.left {
+  left: 0;
+  transform-origin: right center;
+}
+
+/* Flip State */
+.page-wrapper.flipped {
+  transform: rotateY(-180deg);
+}
+
+/* ============================= */
+/* PAGE LOOK */
+/* ============================= */
+
+.page {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: white;
+  backface-visibility: hidden;
+  overflow: hidden;
+  border-radius: 6px;
+
+  box-shadow: inset 0 0 25px rgba(0, 0, 0, 0.08),
+    0 15px 35px rgba(0, 0, 0, 0.25);
+}
+
+/* Front Side */
+.page.front {
+  transform: rotateY(0deg);
+}
+
+/* Back Side */
+.page.back {
+  transform: rotateY(180deg);
+}
+
+/* Image */
+.page img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Page Curl Effect */
+.page::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  width: 70px;
+  height: 100%;
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.18), transparent);
+  opacity: 0;
+}
+
+.page-wrapper:hover .page::after {
+  opacity: 1;
+}
+
+/* Paper Stack */
+.page-stack {
+  position: absolute;
+  width: 12px;
+  height: 100%;
+  background: repeating-linear-gradient(#fff, #fff 3px, #eaeaea 4px);
+}
+
+.page-stack.left {
+  left: -12px;
+}
+
+.page-stack.right {
+  right: -12px;
+}
