@@ -60,7 +60,7 @@
                         class="bg-white text-blue-600 px-6 py-3 rounded-xl font-bold shadow-xl border border-blue-100 hover:bg-blue-600 hover:text-white transition-all scale-90 group-hover:scale-100 uppercase text-xs tracking-widest">
                         Open
                     </a>
-                    <button onclick="editBook('{{ book.id }}', '{{ book.title|replace('\'', '\\\'') }}')"
+                    <button onclick="editBook('{{ book.id }}', this.dataset.title)" data-title="{{ book.title }}"
                         class="bg-white text-yellow-500 w-10 h-10 flex items-center justify-center rounded-xl shadow-xl border border-yellow-50 hover:bg-yellow-500 hover:text-white transition-all scale-90 group-hover:scale-100">
                         <i class="fas fa-pen"></i>
                     </button>
@@ -165,6 +165,28 @@
         } catch (err) {
             console.error(err);
             alert('Error deleting book');
+        }
+    }
+
+    async function editBook(bookId, currentTitle) {
+        const newTitle = prompt("Rename your book:", currentTitle);
+        if (!newTitle || newTitle === currentTitle) return;
+
+        try {
+            const response = await fetch(`/api/book/${bookId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: newTitle })
+            });
+
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                alert('Update failed');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Error updating book');
         }
     }
 
