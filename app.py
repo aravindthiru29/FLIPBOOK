@@ -17,10 +17,23 @@ if database_url:
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    # Vercel-specific pool settings for PostgreSQL
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_size': 2,
+        'pool_recycle': 60,
+        'pool_pre_ping': True,
+        'connect_args': {
+            'connect_timeout': 10,
+            'options': '-c statement_timeout=30000'
+        }
+    }
 else:
     # We fallback to sqlite only if specifically running locally.
     print("WARNING: POSTGRES_URL not found. Using SQLite (Local Mode).")
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///flipbook.db'
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'connect_args': {'timeout': 30}
+    }
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -29,10 +42,17 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
 
 db = SQLAlchemy(app)
 
+# Flag to track if database has been initialized
+_db_initialized = False
+
 # Initialize database tables (runs on Vercel + local)
 def init_db():
-    with app.app_context():
-        try:
+    global _db_initialized
+    if _db_initialized:
+        return
+    
+    try:
+        with app.app_context():
             db.create_all()
             print("Database initialized successfully")
             
@@ -40,11 +60,30 @@ def init_db():
                 os.makedirs(app.config['UPLOAD_FOLDER'])
             if not os.path.exists(app.config['PAGES_FOLDER']):
                 os.makedirs(app.config['PAGES_FOLDER'])
-        except Exception as e:
-            print(f"Database initialization error: {e}")
+            
+            _db_initialized = True
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+        import traceback
+        traceback.print_exc()
 
-# Call init_db immediately (before first request on Vercel)
-init_db()
+# Register before_first_request handler for Vercel compatibility
+@app.before_request
+def before_request():
+    global _db_initialized
+    if not _db_initialized:
+        try:
+            with app.app_context():
+                db.create_all()
+                if not os.path.exists(app.config['UPLOAD_FOLDER']):
+                    os.makedirs(app.config['UPLOAD_FOLDER'])
+                if not os.path.exists(app.config['PAGES_FOLDER']):
+                    os.makedirs(app.config['PAGES_FOLDER'])
+                _db_initialized = True
+        except Exception as e:
+            print(f"Lazy initialization error: {e}")
+            import traceback
+            traceback.print_exc()
 
 # --- Models ---
 class Book(db.Model):
@@ -173,10 +212,32 @@ def pre_render_book(filepath, book_id, page_count):
         print(f"Failed pages: {failed_pages}")
 
 # --- Routes ---
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Vercel"""
+    try:
+        # Test database connection
+        db.session.execute(db.text("SELECT 1"))
+        return jsonify({
+            'status': 'healthy',
+            'database': 'connected',
+            'initialized': _db_initialized
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'database': 'disconnected',
+            'error': str(e)
+        }), 503
+
 @app.route('/')
 def index():
-    books = Book.query.order_by(Book.created_at.desc()).all()
-    return render_template('index.html', books=books)
+    try:
+        books = Book.query.order_by(Book.created_at.desc()).all()
+        return render_template('index.html', books=books)
+    except Exception as e:
+        print(f"Index error: {str(e)}")
+        return jsonify({'error': 'Database connection failed'}), 503
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -413,5 +474,21 @@ def delete_highlight(highlight_id):
         print(f"Delete highlight error: {str(e)}")
         return jsonify({'error': f'Delete failed: {str(e)}'}), 500
 
+# Global error handlers
+@app.errorhandler(500)
+def internal_error(error):
+    db.session.rollback()
+    print(f"Internal server error: {str(error)}")
+    return jsonify({'error': 'Internal server error', 'details': str(error)}), 500
+
+@app.errorhandler(404)
+def not_found_error(error):
+    return jsonify({'error': 'Resource not found'}), 404
+
+@app.errorhandler(400)
+def bad_request_error(error):
+    return jsonify({'error': 'Bad request'}), 400
+
 if __name__ == '__main__':
     app.run(debug=True)
+
