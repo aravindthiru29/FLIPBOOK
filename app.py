@@ -17,9 +17,16 @@ load_dotenv()
 app = Flask(__name__)
 
 # --- Configuration ---
-# Use POSTGRES_URL if available, otherwise fallback to local SQLite (for local dev only)
-# IMPORTANT: On Vercel, this MUST use POSTGRES_URL
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('POSTGRES_URL', 'sqlite:///flipbook.db')
+# Use POSTGRES_URL if available
+# FALLBACK: Only fallback to sqlite if explicitly testing locally
+if os.environ.get('POSTGRES_URL'):
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('POSTGRES_URL')
+else:
+    # If we are on Vercel (production), we MUST use Postgres.
+    # We fallback to sqlite only if specifically running locally.
+    print("WARNING: POSTGRES_URL not found. Using SQLite (Local Mode).")
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///flipbook.db'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
 # Vercel Blob Token
