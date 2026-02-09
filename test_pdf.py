@@ -1,8 +1,8 @@
 import fitz
 import os
 
-filepath = r"d:\Arav\FLIP book - final\uploads\0fbea468_CS3551-Distributed-Computing-Lecture-Notes-1_copy.pdf"
-output_folder = r"d:\Arav\FLIP book - final\static\pages\1"
+filepath = r"d:\Arav\FLIP book - final\uploads\"
+output_folder = r"d:\Arav\FLIP book - final\static\pages\"
 
 try:
     doc = fitz.open(filepath)

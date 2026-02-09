@@ -4,3 +4,5 @@ PyMuPDF==1.23.26
 werkzeug==3.0.1
 gunicorn==21.2.0
 python-dotenv==1.0.1
+psycopg2-binary
+vercel-blob

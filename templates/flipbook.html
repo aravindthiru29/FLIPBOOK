@@ -90,7 +90,9 @@
                     <!-- Page 1 (Internal Cover or Table of Contents) -->
                     <div class="page first-internal" data-page="0">
                         <div class="page-texture"></div>
-                        <img src="/api/book/{{ book_data.id }}/page/0" class="w-full h-full object-contain">
+                        <img src="/api/book/{{ book_data.id }}/page/0" 
+                            class="w-full h-full object-contain"
+                            onerror="handleImageError(this, 0)">
                         <div class="annotations-layer absolute inset-0 z-20"></div>
                     </div>
 
@@ -101,7 +103,8 @@
                         <img {% if i < 4 %} src="/api/book/{{ book_data.id }}/page/{{ i }}" {% else %}
                             data-src="/api/book/{{ book_data.id }}/page/{{ i }}" {% endif %}
                             class="w-full h-full object-contain opacity-0 transition-opacity duration-700"
-                            onload="this.style.opacity=1;">
+                            onload="this.style.opacity=1;"
+                            onerror="handleImageError(this, {{i + 1}})">
                         <div class="page-number text-[10px] text-gray-400 font-mono absolute bottom-4 right-4">{{ i + 1
                             }}</div>
                         <div class="annotations-layer absolute inset-0 z-20"></div>
@@ -382,12 +385,26 @@
                 if (v == 0) return;
                 const $p = $flipbook.find('.page').eq(v - 2);
 
-                // Image Lazy Load
+                // Image Lazy Load with error handling
                 const $img = $p.find('img');
                 if ($img.length && !loaded.has(v)) {
-                    const src = $img.attr('data-src');
-                    if (src) {
+                    const src = $img.attr('data-src') || $img.attr('src');
+                    if (src && !$img.attr('src')) {
                         $img.attr('src', src).removeAttr('data-src');
+                        
+                        // Add error handling for failed image loads
+                        $img.on('error', function() {
+                            console.error(`Failed to load image for page ${v}`);
+                            $(this).css({
+                                'background-color': '#fff3cd',
+                                'display': 'flex',
+                                'align-items': 'center',
+                                'justify-content': 'center',
+                                'font-size': '14px',
+                                'color': '#856404'
+                            });
+                            $(this).after(`<div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #fff3cd; color: #856404; font-size: 14px; z-index: 5;">Failed to load page ${v}<br><small>The PDF page may be blank or corrupted</small></div>`);
+                        });
                     }
                     loaded.add(v);
                 }
@@ -535,6 +552,15 @@
     });
 
     // --- GLOBAL HELPERS ---
+    function handleImageError(img, pageNum) {
+        img.style.opacity = '1';
+        img.style.backgroundColor = '#fff3cd';
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = 'position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #fff3cd; color: #856404; font-size: 14px; z-index: 5;';
+        errorDiv.innerHTML = `Failed to load page ${pageNum}<br><small>The PDF page may be blank or corrupted</small>`;
+        img.parentElement.appendChild(errorDiv);
+    }
+
     function toggleMode(mode) {
         if (currentMode === mode) setMode(null);
         else setMode(mode);
