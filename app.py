@@ -115,18 +115,7 @@ def upload_file():
             pdf_url = blob_resp['url']
             print(f"Uploaded to Blob: {pdf_url}")
 
-            # 2. Get Metadata (Download to tmp first)
-            # We need to calculate page count.
-            # Since we just uploaded, we could have saved a tmp copy first, but
-            # simpler to just download it back or use the file stream if valid.
-            # Let's use a temp file for metadata extraction to be safe.
-            unique_id = str(uuid.uuid4())[:8]
             tmp_path = f"/tmp/{unique_id}_{filename}"
-            
-            # Reset file pointer to read again (if possible) or download
-            # file.seek(0) -> accessing stream after read might be tricky if handled by werkzeug
-            # So, let's download from the Blob URL we just got.
-            
             response = requests.get(pdf_url)
             with open(tmp_path, 'wb') as f:
                 f.write(response.content)
