@@ -27,13 +27,6 @@
                 </button>
                 <div class="w-px h-4 bg-gray-300"></div>
 
-                <!-- Chat Button -->
-                <button id="chat-mode-btn" onclick="toggleChat()"
-                    class="text-gray-500 hover:text-blue-600 transition-colors" title="Chat with Book">
-                    <i class="fas fa-comment-alt"></i>
-                </button>
-                <div class="w-px h-4 bg-gray-300"></div>
-
                 <button onclick="toggleWarmth()" class="text-gray-500 hover:text-orange-600 transition-colors"
                     title="Reading Mode">
                     <i class="fas fa-eye"></i>
@@ -47,37 +40,6 @@
             <button id="fullscreen-btn" class="p-2 text-gray-400 hover:text-gray-900 transition-colors">
                 <i class="fas fa-expand"></i>
             </button>
-        </div>
-    </div>
-
-    <!-- Chat Interface -->
-    <div id="chat-container"
-        class="fixed bottom-4 right-4 w-96 bg-white rounded-lg shadow-2xl z-50 transform transition-transform duration-300 translate-y-[120%] flex flex-col overflow-hidden border border-gray-200"
-        style="height: 500px;">
-        <div class="bg-blue-600 text-white p-3 flex justify-between items-center cursor-pointer" onclick="toggleChat()">
-            <div class="flex items-center space-x-2">
-                <i class="fas fa-robot"></i>
-                <span class="font-bold text-sm">Ask AI about this book</span>
-            </div>
-            <button class="hover:text-blue-200"><i class="fas fa-times"></i></button>
-        </div>
-
-        <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4 bg-gray-50 text-sm">
-            <div class="bg-blue-100 p-3 rounded-lg rounded-tl-none self-start max-w-[80%] text-gray-800">
-                Hi! Ask me anything about "{{ book_data.title }}".
-            </div>
-        </div>
-
-        <div class="p-3 bg-white border-t border-gray-100">
-            <div class="flex space-x-2">
-                <input type="text" id="chat-input" placeholder="Type your question..."
-                    class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                    onkeypress="if(event.key === 'Enter') sendMessage()">
-                <button onclick="sendMessage()"
-                    class="bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 transition-colors">
-                    <i class="fas fa-paper-plane"></i>
-                </button>
-            </div>
         </div>
     </div>
 
@@ -141,7 +103,7 @@
                         <img {% if i < 4 %} src="/api/book/{{ book_data.id }}/page/{{ i }}" {% else %}
                             data-src="/api/book/{{ book_data.id }}/page/{{ i }}" {% endif %}
                             class="w-full h-full object-contain opacity-0 transition-opacity duration-700"
-                            onload="this.style.opacity=1;" onerror="handleImageError(this, {{i + 1}})">
+                            onload="this.style.opacity=1;" onerror="handleImageError(this, {{ i + 1 }})"/>
                         <div class="page-number text-[10px] text-gray-400 font-mono absolute bottom-4 right-4">{{ i + 1
                             }}</div>
                         <div class="annotations-layer absolute inset-0 z-20"></div>
@@ -171,57 +133,6 @@
 </div>
 
 <style>
-    /* Chat Styles */
-    #chat-container.open {
-        transform: translateY(0);
-    }
-
-    .chat-msg-user {
-        background-color: #3b82f6;
-        color: white;
-        padding: 0.75rem;
-        border-radius: 0.5rem;
-        border-bottom-right-radius: 0;
-        align-self: flex-end;
-        max-width: 80%;
-    }
-
-    .chat-msg-bot {
-        background-color: #e5e7eb;
-        color: #1f2937;
-        padding: 0.75rem;
-        border-radius: 0.5rem;
-        border-bottom-left-radius: 0;
-        align-self: flex-start;
-        max-width: 80%;
-    }
-
-    .loading-dots:after {
-        content: ' .';
-        animation: dots 1s steps(5, end) infinite;
-    }
-
-    @keyframes dots {
-
-        0%,
-        20% {
-            content: ' .';
-        }
-
-        40% {
-            content: ' ..';
-        }
-
-        60% {
-            content: ' ...';
-        }
-
-        80%,
-        100% {
-            content: '';
-        }
-    }
-
     /* Annotations */
     .note-marker {
         position: absolute;
@@ -403,60 +314,6 @@
     let allNotes = [];
     let allHighlights = [];
 
-    // --- CHAT FUNCTIONS ---
-    function toggleChat() {
-        const $chat = $('#chat-container');
-        if ($chat.hasClass('open')) {
-            $chat.removeClass('open');
-            $('#chat-mode-btn').removeClass('text-blue-600');
-        } else {
-            $chat.addClass('open');
-            $('#chat-mode-btn').addClass('text-blue-600');
-            $('#chat-input').focus();
-        }
-    }
-
-    function sendMessage() {
-        const input = document.getElementById('chat-input');
-        const message = input.value.trim();
-        if (!message) return;
-
-        // User Message
-        const $msgs = $('#chat-messages');
-        $msgs.append(`<div class="chat-msg-user">${message}</div>`);
-        input.value = '';
-        $msgs.scrollTop($msgs[0].scrollHeight);
-
-        // Loading
-        const $loading = $(`<div class="chat-msg-bot loading-dots">Thinking</div>`);
-        $msgs.append($loading);
-        $msgs.scrollTop($msgs[0].scrollHeight);
-
-        // API Call
-        fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ book_id: BOOK_ID, message: message })
-        })
-            .then(r => r.json())
-            .then(data => {
-                $loading.remove();
-                if (data.error) {
-                    $msgs.append(`<div class="chat-msg-bot text-red-500">Error: ${data.error}</div>`);
-                } else if (data.response) {
-                    // Determine if Markdown (simple check) to enable newlines
-                    // For a full solution, use a markdown lib (marked.js), but here simple text works
-                    const text = data.response.replace(/\n/g, '<br>');
-                    $msgs.append(`<div class="chat-msg-bot">${text}</div>`);
-                }
-                $msgs.scrollTop($msgs[0].scrollHeight);
-            })
-            .catch(err => {
-                $loading.remove();
-                $msgs.append(`<div class="chat-msg-bot text-red-500">Network Error</div>`);
-            });
-    }
-
     $(document).ready(function () {
         const $flipbook = $('#flipbook');
         const $rangeDisplay = $('#current-pages-range');
@@ -468,11 +325,15 @@
                 fetch(`/api/book/${BOOK_ID}/notes`).then(r => r.json()),
                 fetch(`/api/book/${BOOK_ID}/highlights`).then(r => r.json())
             ]).then(([notes, highlights]) => {
-                allNotes = notes;
-                allHighlights = highlights;
+                allNotes = Array.isArray(notes) ? notes : [];
+                allHighlights = Array.isArray(highlights) ? highlights : [];
                 // Reload current view to show initial annotations
                 const currentView = $flipbook.turn('view');
                 load(currentView);
+            }).catch(err => {
+                console.error('Failed to load annotations:', err);
+                allNotes = [];
+                allHighlights = [];
             });
         }
 
@@ -660,7 +521,13 @@
                                 const newNote = { id: d.id, page_number: pageNum, content, x, y };
                                 allNotes.push(newNote);
                                 renderNote(newNote, $page);
+                            } else {
+                                alert('Error: ' + (d.error || 'Failed to create note'));
                             }
+                        })
+                        .catch(err => {
+                            console.error('Add note error:', err);
+                            alert('Network error: Failed to create note');
                         });
                 }
                 setMode(null);
@@ -680,7 +547,13 @@
                             const newHighlight = { id: d.id, page_number: pageNum, coordinates: { x, y } };
                             allHighlights.push(newHighlight);
                             renderHighlight(newHighlight, $page);
+                        } else {
+                            alert('Error: ' + (d.error || 'Failed to create highlight'));
                         }
+                    })
+                    .catch(err => {
+                        console.error('Add highlight error:', err);
+                        alert('Network error: Failed to create highlight');
                     });
                 setMode(null);
             }
@@ -733,7 +606,13 @@
                 if (d.success) {
                     $(el).closest('.note-marker').remove();
                     allNotes = allNotes.filter(n => n.id !== id);
+                } else {
+                    alert('Error: ' + (d.error || 'Failed to delete note'));
                 }
+            })
+            .catch(err => {
+                console.error('Delete note error:', err);
+                alert('Network error: Failed to delete note');
             });
     }
 
@@ -745,7 +624,13 @@
                 if (d.success) {
                     $(el).closest('.highlight-marker').remove();
                     allHighlights = allHighlights.filter(h => h.id !== id);
+                } else {
+                    alert('Error: ' + (d.error || 'Failed to delete highlight'));
                 }
+            })
+            .catch(err => {
+                console.error('Delete highlight error:', err);
+                alert('Network error: Failed to delete highlight');
             });
     }
 

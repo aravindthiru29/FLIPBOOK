@@ -7,11 +7,6 @@ from datetime import datetime
 from flask import Flask, render_template, request, send_from_directory, jsonify, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
-import google.generativeai as genai
-
-# Configure Gemini (Get API Key from env)
-genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
-model = genai.GenerativeModel('gemini-pro')
 
 app = Flask(__name__)
 # --- Configuration ---
@@ -38,18 +33,6 @@ db = SQLAlchemy(app)
 def init_db():
     with app.app_context():
         try:
-            # Handle DB Migration (Add column if missing)
-            try:
-                db.session.execute(db.text("SELECT text_content FROM book LIMIT 1"))
-            except Exception:
-                print("Migrating DB: Adding text_content column...")
-                try:
-                    with db.engine.connect() as conn:
-                        conn.execute(db.text("ALTER TABLE book ADD COLUMN text_content TEXT"))
-                        conn.commit()
-                except Exception as e:
-                    print(f"Migration Note: {e}")
-            
             db.create_all()
             print("Database initialized successfully")
             
@@ -69,8 +52,6 @@ class Book(db.Model):
     title = db.Column(db.String(255), nullable=False)
     filename = db.Column(db.String(255), nullable=False)
     page_count = db.Column(db.Integer)
-    # Store extracted text for AI Chat
-    text_content = db.Column(db.Text, nullable=True) 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     notes = db.relationship('Note', backref='book', lazy=True, cascade="all, delete-orphan")
@@ -98,14 +79,8 @@ def get_pdf_metadata(filepath):
     doc = fitz.open(filepath)
     toc = doc.get_toc()
     page_count = doc.page_count
-    
-    # Extract text for AI
-    full_text = ""
-    for page in doc:
-        full_text += page.get_text() + "\n"
-        
     doc.close()
-    return page_count, toc, full_text
+    return page_count, toc
 
 def render_pdf_page(filepath, page_num, output_folder):
     """Render a PDF page to JPG with error handling and fallback rendering"""
@@ -205,77 +180,60 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        
+        if file and file.filename.lower().endswith('.pdf'):
+            # Ensure upload folder exists
+            if not os.path.exists(app.config['UPLOAD_FOLDER']):
+                os.makedirs(app.config['UPLOAD_FOLDER'])
+            
+            filename = secure_filename(file.filename)
+            # Unique folder for each book to avoid collisions
+            unique_id = str(uuid.uuid4())[:8]
+            save_name = f"{unique_id}_{filename}"
+            
+            # Ensure absolute path for saving the uploaded PDF
+            file_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], save_name))
+            file.save(file_path)
+            print(f"Uploaded PDF saved to: {file_path}")
+            
+            # Get metadata and add print statements
+            print(f"Opening PDF for metadata extraction: {file_path}")
+            page_count, toc = get_pdf_metadata(file_path)
+            print(f"PDF opened successfully. Total pages: {page_count}")
+            
+            new_book = Book(title=filename, filename=save_name, page_count=page_count)
+            db.session.add(new_book)
+            db.session.commit()
+            
+            # Start background pre-rendering
+            thread = threading.Thread(target=pre_render_book, args=(file_path, new_book.id, page_count))
+            thread.daemon = True
+            thread.start()
+            
+            return jsonify({
+                'success': True,
+                'book_id': new_book.id,
+                'title': new_book.title,
+                'page_count': new_book.page_count,
+                'redirect': url_for('view_book', book_id=new_book.id)
+            })
+        
+        return jsonify({'error': 'Invalid file type'}), 400
     
-    if file and file.filename.lower().endswith('.pdf'):
-        filename = secure_filename(file.filename)
-        # Unique folder for each book to avoid collisions
-        unique_id = str(uuid.uuid4())[:8]
-        save_name = f"{unique_id}_{filename}"
-        
-        # Ensure absolute path for saving the uploaded PDF
-        file_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], save_name))
-        file.save(file_path)
-        print(f"Uploaded PDF saved to: {file_path}")
-        
-        # Get metadata and add print statements
-        print(f"Opening PDF for metadata extraction: {file_path}")
-        page_count, toc, full_text = get_pdf_metadata(file_path)
-        print(f"PDF opened successfully. Total pages: {page_count}")
-        
-        new_book = Book(title=filename, filename=save_name, page_count=page_count, text_content=full_text)
-        db.session.add(new_book)
-        db.session.commit()
-        
-        # Start background pre-rendering
-        thread = threading.Thread(target=pre_render_book, args=(file_path, new_book.id, page_count))
-        thread.daemon = True
-        thread.start()
-        
-        return jsonify({
-            'success': True,
-            'book_id': new_book.id,
-            'title': new_book.title,
-            'page_count': new_book.page_count,
-            'redirect': url_for('view_book', book_id=new_book.id)
-        })
-    
-    return jsonify({'error': 'Invalid file type'}), 400
+    except Exception as e:
+        print(f"Upload error: {str(e)}")
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 @app.route('/book/<int:book_id>')
 def view_book(book_id):
     book = Book.query.get_or_404(book_id)
     return render_template('flipbook.html', book_data=book)
-
-@app.route('/api/chat', methods=['POST'])
-def chat_with_book():
-    data = request.json
-    book_id = data.get('book_id')
-    user_message = data.get('message')
-    
-    if not book_id or not user_message:
-        return jsonify({'error': 'Missing book_id or message'}), 400
-        
-    book = Book.query.get_or_404(book_id)
-    
-    # Check if text content exists
-    if not book.text_content:
-        return jsonify({'response': "I can't read this book because no text was extracted from it."})
-    
-    try:
-        # Construct prompt with context
-        # Truncate text if too long (approx 30k chars for safety, though Gemini handles more)
-        context = book.text_content[:30000] 
-        prompt = f"Context from the book '{book.title}':\n\n{context}\n\nUser Question: {user_message}\n\nAnswer based on the context provided:"
-        
-        response = model.generate_content(prompt)
-        return jsonify({'response': response.text})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/book/<int:book_id>/page/<int:page_num>')
 def get_page(book_id, page_num):
@@ -319,56 +277,72 @@ def get_page(book_id, page_num):
 def get_toc(book_id):
     book = Book.query.get_or_404(book_id)
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], book.filename)
-    _, toc, _ = get_pdf_metadata(file_path)
+    _, toc = get_pdf_metadata(file_path)
     return jsonify(toc)
 
 # Notes API
 @app.route('/api/book/<int:book_id>/notes', methods=['GET', 'POST'])
 def handle_notes(book_id):
-    if request.method == 'POST':
-        data = request.json
-        new_note = Note(
-            book_id=book_id,
-            page_number=data['page_number'],
-            content=data['content'],
-            x=data.get('x'),
-            y=data.get('y')
-        )
-        db.session.add(new_note)
-        db.session.commit()
-        return jsonify({'id': new_note.id, 'success': True})
-    
-    notes = Note.query.filter_by(book_id=book_id).all()
-    return jsonify([{
-        'id': n.id,
-        'page_number': n.page_number,
-        'content': n.content,
-        'x': n.x,
-        'y': n.y
-    } for n in notes])
+    try:
+        if request.method == 'POST':
+            data = request.json
+            if not data or 'page_number' not in data or 'content' not in data:
+                return jsonify({'error': 'Missing required fields'}), 400
+            
+            new_note = Note(
+                book_id=book_id,
+                page_number=data['page_number'],
+                content=data['content'],
+                x=data.get('x'),
+                y=data.get('y')
+            )
+            db.session.add(new_note)
+            db.session.commit()
+            return jsonify({'id': new_note.id, 'success': True})
+        
+        notes = Note.query.filter_by(book_id=book_id).all()
+        return jsonify([{
+            'id': n.id,
+            'page_number': n.page_number,
+            'content': n.content,
+            'x': n.x,
+            'y': n.y
+        } for n in notes])
+    except Exception as e:
+        db.session.rollback()
+        print(f"Notes API error: {str(e)}")
+        return jsonify({'error': f'Notes operation failed: {str(e)}'}), 500
 
 # Highlights API
 @app.route('/api/book/<int:book_id>/highlights', methods=['GET', 'POST'])
 def handle_highlights(book_id):
-    if request.method == 'POST':
-        data = request.json
-        new_highlight = Highlight(
-            book_id=book_id,
-            page_number=data['page_number'],
-            coordinates=data['coordinates'],
-            color=data.get('color', 'yellow')
-        )
-        db.session.add(new_highlight)
-        db.session.commit()
-        return jsonify({'id': new_highlight.id, 'success': True})
-    
-    highlights = Highlight.query.filter_by(book_id=book_id).all()
-    return jsonify([{
-        'id': h.id,
-        'page_number': h.page_number,
-        'coordinates': h.coordinates,
-        'color': h.color
-    } for h in highlights])
+    try:
+        if request.method == 'POST':
+            data = request.json
+            if not data or 'page_number' not in data or 'coordinates' not in data:
+                return jsonify({'error': 'Missing required fields'}), 400
+            
+            new_highlight = Highlight(
+                book_id=book_id,
+                page_number=data['page_number'],
+                coordinates=data['coordinates'],
+                color=data.get('color', 'yellow')
+            )
+            db.session.add(new_highlight)
+            db.session.commit()
+            return jsonify({'id': new_highlight.id, 'success': True})
+        
+        highlights = Highlight.query.filter_by(book_id=book_id).all()
+        return jsonify([{
+            'id': h.id,
+            'page_number': h.page_number,
+            'coordinates': h.coordinates,
+            'color': h.color
+        } for h in highlights])
+    except Exception as e:
+        db.session.rollback()
+        print(f"Highlights API error: {str(e)}")
+        return jsonify({'error': f'Highlights operation failed: {str(e)}'}), 500
 
 @app.route('/api/book/<int:book_id>/delete', methods=['DELETE'])
 def delete_book(book_id):
@@ -389,7 +363,6 @@ def delete_book(book_id):
             
     except Exception as e:
         print(f"Error deleting files: {e}")
-        # Note: We continue to delete from DB even if file deletion fails partially
 
     # Remove from DB
     db.session.delete(book)
@@ -399,28 +372,46 @@ def delete_book(book_id):
 
 @app.route('/api/book/<int:book_id>', methods=['PUT'])
 def update_book(book_id):
-    book = Book.query.get_or_404(book_id)
-    data = request.json
-    
-    if 'title' in data:
-        book.title = data['title']
+    try:
+        book = Book.query.get_or_404(book_id)
+        data = request.json
         
-    db.session.commit()
-    return jsonify({'success': True, 'title': book.title})
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        if 'title' in data:
+            book.title = data['title']
+            
+        db.session.commit()
+        return jsonify({'success': True, 'title': book.title})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Update book error: {str(e)}")
+        return jsonify({'error': f'Update failed: {str(e)}'}), 500
 
 @app.route('/api/note/<int:note_id>', methods=['DELETE'])
 def delete_note(note_id):
-    note = Note.query.get_or_404(note_id)
-    db.session.delete(note)
-    db.session.commit()
-    return jsonify({'success': True})
+    try:
+        note = Note.query.get_or_404(note_id)
+        db.session.delete(note)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Delete note error: {str(e)}")
+        return jsonify({'error': f'Delete failed: {str(e)}'}), 500
 
 @app.route('/api/highlight/<int:highlight_id>', methods=['DELETE'])
 def delete_highlight(highlight_id):
-    highlight = Highlight.query.get_or_404(highlight_id)
-    db.session.delete(highlight)
-    db.session.commit()
-    return jsonify({'success': True})
+    try:
+        highlight = Highlight.query.get_or_404(highlight_id)
+        db.session.delete(highlight)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Delete highlight error: {str(e)}")
+        return jsonify({'error': f'Delete failed: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
