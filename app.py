@@ -16,15 +16,25 @@ if database_url:
     # Fix PostgreSQL URL format for newer psycopg2 versions
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    
+    # Ensure SSL mode is set (required for Vercel)
+    if '?' not in database_url:
+        database_url += '?sslmode=require'
+    elif 'sslmode' not in database_url:
+        database_url += '&sslmode=require'
+    
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    print(f"Using PostgreSQL: {database_url[:50]}...")
+    
     # Vercel-specific pool settings for PostgreSQL
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_size': 2,
-        'pool_recycle': 60,
+        'pool_size': 1,
+        'max_overflow': 1,
+        'pool_recycle': 3600,
         'pool_pre_ping': True,
         'connect_args': {
-            'connect_timeout': 10,
-            'options': '-c statement_timeout=30000'
+            'connect_timeout': 15,
+            'application_name': 'flipbook_app'
         }
     }
 else:
@@ -44,44 +54,70 @@ db = SQLAlchemy(app)
 
 # Flag to track if database has been initialized
 _db_initialized = False
+_db_error = None
 
 # Initialize database tables (runs on Vercel + local)
 def init_db():
-    global _db_initialized
+    global _db_initialized, _db_error
     if _db_initialized:
         return
     
     try:
         with app.app_context():
+            print("Attempting database connection...")
+            
+            # Test connection
+            connection = db.engine.connect()
+            print("✓ Database connection successful")
+            connection.close()
+            
+            # Create tables
             db.create_all()
-            print("Database initialized successfully")
+            print("✓ Database tables created/verified")
             
             if not os.path.exists(app.config['UPLOAD_FOLDER']):
                 os.makedirs(app.config['UPLOAD_FOLDER'])
+                print(f"✓ Created uploads folder")
             if not os.path.exists(app.config['PAGES_FOLDER']):
                 os.makedirs(app.config['PAGES_FOLDER'])
+                print(f"✓ Created pages folder")
             
             _db_initialized = True
+            print("✓ Database initialization complete")
     except Exception as e:
-        print(f"Database initialization error: {e}")
+        _db_error = str(e)
+        print(f"✗ Database initialization error: {e}")
         import traceback
         traceback.print_exc()
 
-# Register before_first_request handler for Vercel compatibility
+# Register before_request handler for Vercel compatibility
 @app.before_request
 def before_request():
-    global _db_initialized
+    global _db_initialized, _db_error
     if not _db_initialized:
         try:
             with app.app_context():
+                print("Attempting lazy database initialization...")
+                
+                # Test connection
+                connection = db.engine.connect()
+                print("✓ Database connection successful")
+                connection.close()
+                
+                # Create tables
                 db.create_all()
+                print("✓ Database tables created/verified")
+                
                 if not os.path.exists(app.config['UPLOAD_FOLDER']):
                     os.makedirs(app.config['UPLOAD_FOLDER'])
                 if not os.path.exists(app.config['PAGES_FOLDER']):
                     os.makedirs(app.config['PAGES_FOLDER'])
+                    
                 _db_initialized = True
+                print("✓ Lazy initialization complete")
         except Exception as e:
-            print(f"Lazy initialization error: {e}")
+            _db_error = str(e)
+            print(f"✗ Lazy initialization error: {e}")
             import traceback
             traceback.print_exc()
 
@@ -214,21 +250,33 @@ def pre_render_book(filepath, book_id, page_count):
 # --- Routes ---
 @app.route('/health')
 def health_check():
-    """Health check endpoint for Vercel"""
+    result = {
+        'status': 'unknown',
+        'database': 'unknown',
+        'initialized': _db_initialized,
+        'db_error': _db_error,
+        'postgres_url': 'configured' if os.environ.get('POSTGRES_URL') else 'missing'
+    }
+    
     try:
         # Test database connection
-        db.session.execute(db.text("SELECT 1"))
-        return jsonify({
-            'status': 'healthy',
-            'database': 'connected',
-            'initialized': _db_initialized
-        })
+        print("[Health Check] Testing database connection...")
+        connection = db.engine.connect()
+        result['status'] = 'healthy'
+        result['database'] = 'connected'
+        result['pool_info'] = f"Pool size: {db.engine.pool.size()}"
+        connection.close()
+        print("[Health Check] Database connection successful")
+        return jsonify(result), 200
     except Exception as e:
-        return jsonify({
-            'status': 'unhealthy',
-            'database': 'disconnected',
-            'error': str(e)
-        }), 503
+        result['status'] = 'unhealthy'
+        result['database'] = 'disconnected'
+        result['error'] = str(e)
+        result['error_type'] = type(e).__name__
+        print(f"[Health Check] Database error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify(result), 503
 
 @app.route('/')
 def index():
