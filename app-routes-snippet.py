@@ -1,4 +1,6 @@
 
+from flask import jsonify
+
 @app.route('/book/<int:book_id>/delete', methods=['DELETE'])
 def delete_book(book_id):
     book = Book.query.get_or_404(book_id)

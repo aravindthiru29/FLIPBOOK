@@ -7,9 +7,26 @@ from datetime import datetime
 from flask import Flask, render_template, request, send_from_directory, jsonify, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
+import google.generativeai as genai
+
+# Configure Gemini (Get API Key from env)
+genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+model = genai.GenerativeModel('gemini-pro')
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///flipbook.db'
+# --- Configuration ---
+database_url = os.environ.get('POSTGRES_URL')
+
+if database_url:
+    # Fix PostgreSQL URL format for newer psycopg2 versions
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+else:
+    # We fallback to sqlite only if specifically running locally.
+    print("WARNING: POSTGRES_URL not found. Using SQLite (Local Mode).")
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///flipbook.db'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['PAGES_FOLDER'] = os.path.join('static', 'pages')
@@ -17,12 +34,43 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
 
 db = SQLAlchemy(app)
 
+# Initialize database tables (runs on Vercel + local)
+def init_db():
+    with app.app_context():
+        try:
+            # Handle DB Migration (Add column if missing)
+            try:
+                db.session.execute(db.text("SELECT text_content FROM book LIMIT 1"))
+            except Exception:
+                print("Migrating DB: Adding text_content column...")
+                try:
+                    with db.engine.connect() as conn:
+                        conn.execute(db.text("ALTER TABLE book ADD COLUMN text_content TEXT"))
+                        conn.commit()
+                except Exception as e:
+                    print(f"Migration Note: {e}")
+            
+            db.create_all()
+            print("Database initialized successfully")
+            
+            if not os.path.exists(app.config['UPLOAD_FOLDER']):
+                os.makedirs(app.config['UPLOAD_FOLDER'])
+            if not os.path.exists(app.config['PAGES_FOLDER']):
+                os.makedirs(app.config['PAGES_FOLDER'])
+        except Exception as e:
+            print(f"Database initialization error: {e}")
+
+# Call init_db immediately (before first request on Vercel)
+init_db()
+
 # --- Models ---
 class Book(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(255), nullable=False)
     filename = db.Column(db.String(255), nullable=False)
     page_count = db.Column(db.Integer)
+    # Store extracted text for AI Chat
+    text_content = db.Column(db.Text, nullable=True) 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     notes = db.relationship('Note', backref='book', lazy=True, cascade="all, delete-orphan")
@@ -50,8 +98,14 @@ def get_pdf_metadata(filepath):
     doc = fitz.open(filepath)
     toc = doc.get_toc()
     page_count = doc.page_count
+    
+    # Extract text for AI
+    full_text = ""
+    for page in doc:
+        full_text += page.get_text() + "\n"
+        
     doc.close()
-    return page_count, toc
+    return page_count, toc, full_text
 
 def render_pdf_page(filepath, page_num, output_folder):
     """Render a PDF page to JPG with error handling and fallback rendering"""
@@ -170,10 +224,10 @@ def upload_file():
         
         # Get metadata and add print statements
         print(f"Opening PDF for metadata extraction: {file_path}")
-        page_count, toc = get_pdf_metadata(file_path)
+        page_count, toc, full_text = get_pdf_metadata(file_path)
         print(f"PDF opened successfully. Total pages: {page_count}")
         
-        new_book = Book(title=filename, filename=save_name, page_count=page_count)
+        new_book = Book(title=filename, filename=save_name, page_count=page_count, text_content=full_text)
         db.session.add(new_book)
         db.session.commit()
         
@@ -196,6 +250,32 @@ def upload_file():
 def view_book(book_id):
     book = Book.query.get_or_404(book_id)
     return render_template('flipbook.html', book_data=book)
+
+@app.route('/api/chat', methods=['POST'])
+def chat_with_book():
+    data = request.json
+    book_id = data.get('book_id')
+    user_message = data.get('message')
+    
+    if not book_id or not user_message:
+        return jsonify({'error': 'Missing book_id or message'}), 400
+        
+    book = Book.query.get_or_404(book_id)
+    
+    # Check if text content exists
+    if not book.text_content:
+        return jsonify({'response': "I can't read this book because no text was extracted from it."})
+    
+    try:
+        # Construct prompt with context
+        # Truncate text if too long (approx 30k chars for safety, though Gemini handles more)
+        context = book.text_content[:30000] 
+        prompt = f"Context from the book '{book.title}':\n\n{context}\n\nUser Question: {user_message}\n\nAnswer based on the context provided:"
+        
+        response = model.generate_content(prompt)
+        return jsonify({'response': response.text})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/book/<int:book_id>/page/<int:page_num>')
 def get_page(book_id, page_num):
@@ -239,7 +319,7 @@ def get_page(book_id, page_num):
 def get_toc(book_id):
     book = Book.query.get_or_404(book_id)
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], book.filename)
-    _, toc = get_pdf_metadata(file_path)
+    _, toc, _ = get_pdf_metadata(file_path)
     return jsonify(toc)
 
 # Notes API
@@ -343,10 +423,4 @@ def delete_highlight(highlight_id):
     return jsonify({'success': True})
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        if not os.path.exists(app.config['UPLOAD_FOLDER']):
-            os.makedirs(app.config['UPLOAD_FOLDER'])
-        if not os.path.exists(app.config['PAGES_FOLDER']):
-            os.makedirs(app.config['PAGES_FOLDER'])
     app.run(debug=True)
