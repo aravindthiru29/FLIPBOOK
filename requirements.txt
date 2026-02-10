@@ -4,7 +4,6 @@ PyMuPDF==1.23.26
 werkzeug==3.0.1
 gunicorn==21.2.0
 python-dotenv==1.0.1
-psycopg2-binary>=2.9.9
-SQLAlchemy>=2.0.0,<3.0.0
-sqlalchemy-utils>=0.41.0
-vercel-blob>=0.19.0
+psycopg2-binary>=2.9.0
+vercel-blob
+SQLAlchemy>=2.0.0
