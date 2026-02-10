@@ -7,10 +7,23 @@ from datetime import datetime
 from flask import Flask, render_template, request, send_from_directory, jsonify, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
+from sqlalchemy import event
+from sqlalchemy.pool import StaticPool
 
 app = Flask(__name__)
+
 # --- Configuration ---
-database_url = os.environ.get('POSTGRES_URL')
+# Vercel environment detection
+IS_VERCEL = os.environ.get('VERCEL') == '1'
+IS_VERCEL_DEV = os.environ.get('VERCEL_ENV') == 'development'
+
+# Database URL - Try multiple environment variables for compatibility
+database_url = (
+    os.environ.get('POSTGRES_URL') or
+    os.environ.get('DATABASE_URL') or
+    os.environ.get('POSTGRES_URL_NON_POOLING') or
+    None
+)
 
 if database_url:
     # Fix PostgreSQL URL format for newer psycopg2 versions
@@ -24,25 +37,32 @@ if database_url:
         database_url += '&sslmode=require'
     
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print(f"Using PostgreSQL: {database_url[:50]}...")
+    print(f"[DB] Using PostgreSQL (Vercel: {IS_VERCEL})")
     
-    # Vercel-specific pool settings for PostgreSQL
+    # Optimized pool settings for Vercel's serverless environment
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_size': 1,
-        'max_overflow': 1,
-        'pool_recycle': 3600,
-        'pool_pre_ping': True,
+        'pool_size': 1 if IS_VERCEL else 5,
+        'max_overflow': 0,
+        'pool_recycle': 600,  # Recycle connections every 10 minutes
+        'pool_pre_ping': True,  # Test connections before using them
         'connect_args': {
-            'connect_timeout': 15,
-            'application_name': 'flipbook_app'
-        }
+            'connect_timeout': 10,
+            'application_name': 'flipbook_app',
+            'keepalives': 1,
+            'keepalives_idle': 30,
+        },
+        'echo': False,  # Set to True for SQL debugging
     }
 else:
-    # We fallback to sqlite only if specifically running locally.
-    print("WARNING: POSTGRES_URL not found. Using SQLite (Local Mode).")
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///flipbook.db'
+    # Fallback to SQLite for local development
+    print("[DB] WARNING: No POSTGRES_URL found. Using SQLite (Local Mode).")
+    sqlite_path = 'sqlite:///flipbook.db'
+    app.config['SQLALCHEMY_DATABASE_URI'] = sqlite_path
+    
+    # SQLite-specific settings
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'connect_args': {'timeout': 30}
+        'connect_args': {'timeout': 30, 'check_same_thread': False},
+        'poolclass': StaticPool,  # Use static pool for SQLite
     }
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -52,74 +72,78 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
 
 db = SQLAlchemy(app)
 
+# --- Database Event Handlers ---
+@event.listens_for(db.engine, "connect")
+def receive_connect(dbapi_conn, connection_record):
+    """Handle connection events"""
+    if 'postgresql' in str(db.engine.url):
+        try:
+            cursor = dbapi_conn.cursor()
+            cursor.execute('SET SESSION autocommit = true')
+            cursor.close()
+        except Exception as e:
+            print(f"[DB] Warning setting autocommit: {e}")
+
 # Flag to track if database has been initialized
 _db_initialized = False
 _db_error = None
+_db_init_lock = threading.Lock()
 
 # Initialize database tables (runs on Vercel + local)
 def init_db():
     global _db_initialized, _db_error
-    if _db_initialized:
-        return
     
-    try:
-        with app.app_context():
-            print("Attempting database connection...")
-            
-            # Test connection
-            connection = db.engine.connect()
-            print("✓ Database connection successful")
-            connection.close()
-            
-            # Create tables
-            db.create_all()
-            print("✓ Database tables created/verified")
-            
-            if not os.path.exists(app.config['UPLOAD_FOLDER']):
-                os.makedirs(app.config['UPLOAD_FOLDER'])
-                print(f"✓ Created uploads folder")
-            if not os.path.exists(app.config['PAGES_FOLDER']):
-                os.makedirs(app.config['PAGES_FOLDER'])
-                print(f"✓ Created pages folder")
-            
-            _db_initialized = True
-            print("✓ Database initialization complete")
-    except Exception as e:
-        _db_error = str(e)
-        print(f"✗ Database initialization error: {e}")
-        import traceback
-        traceback.print_exc()
+    # Prevent multiple concurrent initialization attempts
+    with _db_init_lock:
+        if _db_initialized:
+            return
+        
+        try:
+            with app.app_context():
+                print("[DB] Attempting database connection...")
+                
+                # Test connection with retries
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        connection = db.engine.connect()
+                        print("[DB] ✓ Database connection successful")
+                        connection.close()
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            print(f"[DB] Connection attempt {attempt + 1}/{max_retries} failed: {e}. Retrying...")
+                            import time
+                            time.sleep(0.5)
+                        else:
+                            raise
+                
+                # Create tables
+                db.create_all()
+                print("[DB] ✓ Database tables created/verified")
+                
+                # Create required directories
+                for folder in [app.config['UPLOAD_FOLDER'], app.config['PAGES_FOLDER']]:
+                    if not os.path.exists(folder):
+                        os.makedirs(folder)
+                        print(f"[DB] ✓ Created {folder} folder")
+                
+                _db_initialized = True
+                print("[DB] ✓ Database initialization complete")
+        except Exception as e:
+            _db_error = str(e)
+            print(f"[DB] ✗ Database initialization error: {e}")
+            import traceback
+            traceback.print_exc()
 
 # Register before_request handler for Vercel compatibility
 @app.before_request
 def before_request():
     global _db_initialized, _db_error
     if not _db_initialized:
-        try:
-            with app.app_context():
-                print("Attempting lazy database initialization...")
-                
-                # Test connection
-                connection = db.engine.connect()
-                print("✓ Database connection successful")
-                connection.close()
-                
-                # Create tables
-                db.create_all()
-                print("✓ Database tables created/verified")
-                
-                if not os.path.exists(app.config['UPLOAD_FOLDER']):
-                    os.makedirs(app.config['UPLOAD_FOLDER'])
-                if not os.path.exists(app.config['PAGES_FOLDER']):
-                    os.makedirs(app.config['PAGES_FOLDER'])
-                    
-                _db_initialized = True
-                print("✓ Lazy initialization complete")
-        except Exception as e:
-            _db_error = str(e)
-            print(f"✗ Lazy initialization error: {e}")
-            import traceback
-            traceback.print_exc()
+        init_db()
+        if _db_error:
+            return jsonify({'error': f'Database error: {_db_error}'}), 503
 
 # --- Models ---
 class Book(db.Model):

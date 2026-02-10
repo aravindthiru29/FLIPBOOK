@@ -3,13 +3,30 @@
     "builds": [
         {
             "src": "app.py",
-            "use": "@vercel/python"
+            "use": "@vercel/python",
+            "config": {
+                "maxLambdaSize": "50mb",
+                "runtime": "python3.11"
+            }
         }
     ],
     "routes": [
         {
+            "src": "/static/(.*)",
+            "dest": "/static/$1"
+        },
+        {
             "src": "/(.*)",
             "dest": "app.py"
         }
-    ]
+    ],
+    "env": {
+        "PYTHONUNBUFFERED": "1"
+    },
+    "functions": {
+        "app.py": {
+            "maxDuration": 30,
+            "memory": 3008
+        }
+    }
 }
