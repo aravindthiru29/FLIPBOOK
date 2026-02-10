@@ -25,6 +25,13 @@
                     class="text-gray-500 hover:text-yellow-600 transition-colors" title="Highlight">
                     <i class="fas fa-highlighter"></i>
                 </button>
+                <!-- Highlight Color Picker -->
+                <div id="color-picker" class="flex items-center space-x-2 px-2" style="display: none;">
+                    <button onclick="setHighlightColor('yellow')" class="w-6 h-6 rounded-full bg-yellow-300 border-2 border-yellow-500 hover:border-yellow-700 transition-all ring-2 ring-offset-2 ring-gray-700" title="Yellow" id="color-yellow"></button>
+                    <button onclick="setHighlightColor('green')" class="w-6 h-6 rounded-full bg-green-300 border-2 border-green-500 hover:border-green-700 transition-all" title="Green" id="color-green"></button>
+                    <button onclick="setHighlightColor('pink')" class="w-6 h-6 rounded-full bg-pink-300 border-2 border-pink-500 hover:border-pink-700 transition-all" title="Pink" id="color-pink"></button>
+                    <button onclick="setHighlightColor('blue')" class="w-6 h-6 rounded-full bg-blue-300 border-2 border-blue-500 hover:border-blue-700 transition-all" title="Blue" id="color-blue"></button>
+                </div>
                 <div class="w-px h-4 bg-gray-300"></div>
 
                 <button onclick="toggleWarmth()" class="text-gray-500 hover:text-orange-600 transition-colors"
@@ -103,7 +110,7 @@
                         <img {% if i < 4 %} src="/api/book/{{ book_data.id }}/page/{{ i }}" {% else %}
                             data-src="/api/book/{{ book_data.id }}/page/{{ i }}" {% endif %}
                             class="w-full h-full object-contain opacity-0 transition-opacity duration-700"
-                            onload="this.style.opacity=1;" onerror="handleImageError(this, {{ i + 1 }})"/>
+                            onload="this.style.opacity=1;" onerror="handleImageError(this, {{ i + 1 }});"/>
                         <div class="page-number text-[10px] text-gray-400 font-mono absolute bottom-4 right-4">{{ i + 1
                             }}</div>
                         <div class="annotations-layer absolute inset-0 z-20"></div>
@@ -158,12 +165,52 @@
 
     .highlight-marker {
         position: absolute;
-        width: 100px;
-        height: 20px;
         background: rgba(255, 255, 0, 0.3);
         border-bottom: 2px solid rgba(255, 255, 0, 0.5);
         cursor: pointer;
         z-index: 90;
+        min-width: 10px;
+        min-height: 4px;
+    }
+
+    .highlight-yellow {
+        background: rgba(255, 255, 0, 0.3);
+        border-bottom: 2px solid rgba(255, 255, 0, 0.5);
+    }
+
+    .highlight-yellow:hover {
+        background: rgba(255, 255, 0, 0.5);
+    }
+
+    .highlight-green {
+        background: rgba(34, 197, 94, 0.3);
+        border-bottom: 2px solid rgba(34, 197, 94, 0.5);
+    }
+
+    .highlight-green:hover {
+        background: rgba(34, 197, 94, 0.5);
+    }
+
+    .highlight-pink {
+        background: rgba(244, 114, 182, 0.3);
+        border-bottom: 2px solid rgba(244, 114, 182, 0.5);
+    }
+
+    .highlight-pink:hover {
+        background: rgba(244, 114, 182, 0.5);
+    }
+
+    .highlight-blue {
+        background: rgba(59, 130, 246, 0.3);
+        border-bottom: 2px solid rgba(59, 130, 246, 0.5);
+    }
+
+    .highlight-blue:hover {
+        background: rgba(59, 130, 246, 0.5);
+    }
+
+    .highlight-preview {
+        box-shadow: inset 0 0 4px rgba(255, 165, 0, 0.3);
     }
 
     .highlight-marker:hover {
@@ -300,6 +347,29 @@
     .warm-mode .page {
         background: #fdf6e3 !important;
     }
+
+    #color-picker {
+        animation: slideIn 0.2s ease-in-out;
+    }
+
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateX(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    #color-picker button {
+        transition: all 0.2s ease;
+    }
+
+    #color-picker button:hover {
+        transform: scale(1.15);
+    }
 </style>
 {% endblock %}
 
@@ -311,6 +381,7 @@
 <script>
     const BOOK_ID = '{{ book_data.id }}';
     let currentMode = null; // 'note', 'highlight', or null
+    let currentHighlightColor = 'yellow';
     let allNotes = [];
     let allHighlights = [];
 
@@ -372,8 +443,9 @@
         function renderHighlight(hl, $container) {
             const $layer = $container.find('.annotations-layer');
             const rect = hl.coordinates;
+            const colorClass = `highlight-${hl.color || 'yellow'}`;
             const $el = $(`
-                <div class="highlight-marker" style="left:${rect.x}%; top:${rect.y}%">
+                <div class="highlight-marker ${colorClass}" style="left:${rect.x}%; top:${rect.y}%; width:${rect.w}%; height:${rect.h}%;">
                     <div class="delete-annotation" onclick="deleteHighlight(${hl.id}, this); event.stopPropagation();">
                         <i class="fas fa-times"></i>
                     </div>
@@ -495,8 +567,11 @@
         });
 
         // --- INTERACTION ---
+        let highlightStart = null;
+        let $highlightPreview = null;
+
         $(document).on('click', '.annotations-layer', function (e) {
-            if (!currentMode) return;
+            if (!currentMode || currentMode === 'highlight') return;
 
             const $layer = $(this);
             const $page = $layer.closest('.page');
@@ -531,20 +606,106 @@
                         });
                 }
                 setMode(null);
-            } else if (currentMode === 'highlight') {
+            }
+        });
+
+        // Swipe Highlighter
+        $(document).on('mousedown touchstart', '.annotations-layer', function (e) {
+            if (currentMode !== 'highlight') return;
+            if ($(e.target).closest('.delete-annotation').length) return;
+
+            e.preventDefault();
+            const $layer = $(this);
+            const $page = $layer.closest('.page');
+            const pageNum = $page.data('page');
+            const offset = $layer.offset();
+
+            // Get starting position
+            const startClientX = e.type.includes('touch') ? e.originalEvent.touches[0].clientX : e.clientX;
+            const startClientY = e.type.includes('touch') ? e.originalEvent.touches[0].clientY : e.clientY;
+            const startX = startClientX - offset.left;
+            const startY = startClientY - offset.top;
+
+            highlightStart = { x: startX, y: startY, pageNum, $page, $layer, offset };
+
+            // Create preview element with dynamic color
+            const colorStyles = {
+                yellow: { bg: 'rgba(255, 255, 0, 0.4)', border: 'rgba(255, 165, 0, 0.8)' },
+                green: { bg: 'rgba(34, 197, 94, 0.4)', border: 'rgba(34, 197, 94, 0.8)' },
+                pink: { bg: 'rgba(244, 114, 182, 0.4)', border: 'rgba(244, 114, 182, 0.8)' },
+                blue: { bg: 'rgba(59, 130, 246, 0.4)', border: 'rgba(59, 130, 246, 0.8)' }
+            };
+            const style = colorStyles[currentHighlightColor] || colorStyles.yellow;
+            $highlightPreview = $(`<div class="highlight-preview" style="position: absolute; background: ${style.bg}; border: 1px dashed ${style.border}; pointer-events: none; z-index: 95;"></div>`);
+            $layer.append($highlightPreview);
+        });
+
+        $(document).on('mousemove touchmove', function (e) {
+            if (!highlightStart || !$highlightPreview) return;
+
+            const currentClientX = e.type.includes('touch') ? e.originalEvent.touches[0].clientX : e.clientX;
+            const currentClientY = e.type.includes('touch') ? e.originalEvent.touches[0].clientY : e.clientY;
+            const currentX = currentClientX - highlightStart.offset.left;
+            const currentY = currentClientY - highlightStart.offset.top;
+
+            const startX = highlightStart.x;
+            const startY = highlightStart.y;
+
+            const left = Math.min(startX, currentX);
+            const top = Math.min(startY, currentY);
+            const width = Math.abs(currentX - startX);
+            const height = Math.abs(currentY - startY);
+
+            $highlightPreview.css({
+                left: left + 'px',
+                top: top + 'px',
+                width: width + 'px',
+                height: height + 'px'
+            });
+        });
+
+        $(document).on('mouseup touchend', function (e) {
+            if (!highlightStart || !$highlightPreview) return;
+
+            const $layer = highlightStart.$layer;
+            const $page = highlightStart.$page;
+            const pageNum = highlightStart.pageNum;
+            const offset = highlightStart.offset;
+
+            const endClientX = e.type.includes('touch') ? e.originalEvent.changedTouches[0].clientX : e.clientX;
+            const endClientY = e.type.includes('touch') ? e.originalEvent.changedTouches[0].clientY : e.clientY;
+            const endX = endClientX - offset.left;
+            const endY = endClientY - offset.top;
+
+            const startX = highlightStart.x;
+            const startY = highlightStart.y;
+
+            // Only create highlight if there's meaningful swiping
+            if (Math.abs(endX - startX) > 10 || Math.abs(endY - startY) > 10) {
+                const left = Math.min(startX, endX);
+                const top = Math.min(startY, endY);
+                const width = Math.abs(endX - startX);
+                const height = Math.abs(endY - startY);
+
+                // Convert to % coordinates
+                const x = (left / $layer.width()) * 100;
+                const y = (top / $layer.height()) * 100;
+                const w = (width / $layer.width()) * 100;
+                const h = (height / $layer.height()) * 100;
+
                 fetch(`/api/book/${BOOK_ID}/highlights`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         page_number: pageNum,
-                        coordinates: { x, y, w: 20, h: 4 }, // Simplified fixed highlight
-                        color: 'yellow'
+                        coordinates: { x, y, w, h },
+                        color: currentHighlightColor
                     })
                 })
                     .then(r => r.json())
                     .then(d => {
                         if (d.success) {
-                            const newHighlight = { id: d.id, page_number: pageNum, coordinates: { x, y } };
+                            const newHighlight = { id: d.id, page_number: pageNum, coordinates: { x, y, w, h }, color: currentHighlightColor };
                             allHighlights.push(newHighlight);
                             renderHighlight(newHighlight, $page);
                         } else {
@@ -555,8 +716,12 @@
                         console.error('Add highlight error:', err);
                         alert('Network error: Failed to create highlight');
                     });
-                setMode(null);
             }
+
+            // Clean up
+            $highlightPreview.remove();
+            highlightStart = null;
+            $highlightPreview = null;
         });
 
         // Initial load
@@ -581,17 +746,26 @@
         else setMode(mode);
     }
 
+    function setHighlightColor(color) {
+        currentHighlightColor = color;
+        // Update button styling
+        $('#color-yellow, #color-green, #color-pink, #color-blue').removeClass('ring-2 ring-offset-2 ring-gray-700');
+        $(`#color-${color}`).addClass('ring-2 ring-offset-2 ring-gray-700');
+    }
+
     function setMode(mode) {
         currentMode = mode;
         // UI Reset
         $('#note-mode-btn').removeClass('text-yellow-600 bg-yellow-100');
         $('#highlight-mode-btn').removeClass('text-yellow-600 bg-yellow-100');
+        $('#color-picker').hide();
 
         if (mode === 'note') {
             $('#note-mode-btn').addClass('text-yellow-600 bg-yellow-100');
             document.body.style.cursor = 'crosshair';
         } else if (mode === 'highlight') {
             $('#highlight-mode-btn').addClass('text-yellow-600 bg-yellow-100');
+            $('#color-picker').show();
             document.body.style.cursor = 'text';
         } else {
             document.body.style.cursor = 'default';
