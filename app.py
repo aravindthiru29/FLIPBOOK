@@ -16,7 +16,6 @@ if database_url:
     # Fix PostgreSQL URL format for newer psycopg2 versions
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    
     # Ensure SSL mode is set (required for Vercel)
     if '?' not in database_url:
         database_url += '?sslmode=require'
@@ -521,21 +520,6 @@ def delete_highlight(highlight_id):
         db.session.rollback()
         print(f"Delete highlight error: {str(e)}")
         return jsonify({'error': f'Delete failed: {str(e)}'}), 500
-
-# Global error handlers
-@app.errorhandler(500)
-def internal_error(error):
-    db.session.rollback()
-    print(f"Internal server error: {str(error)}")
-    return jsonify({'error': 'Internal server error', 'details': str(error)}), 500
-
-@app.errorhandler(404)
-def not_found_error(error):
-    return jsonify({'error': 'Resource not found'}), 404
-
-@app.errorhandler(400)
-def bad_request_error(error):
-    return jsonify({'error': 'Bad request'}), 400
 
 if __name__ == '__main__':
     app.run(debug=True)

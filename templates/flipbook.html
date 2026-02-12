@@ -27,10 +27,18 @@
                 </button>
                 <!-- Highlight Color Picker -->
                 <div id="color-picker" class="flex items-center space-x-2 px-2" style="display: none;">
-                    <button onclick="setHighlightColor('yellow')" class="w-6 h-6 rounded-full bg-yellow-300 border-2 border-yellow-500 hover:border-yellow-700 transition-all ring-2 ring-offset-2 ring-gray-700" title="Yellow" id="color-yellow"></button>
-                    <button onclick="setHighlightColor('green')" class="w-6 h-6 rounded-full bg-green-300 border-2 border-green-500 hover:border-green-700 transition-all" title="Green" id="color-green"></button>
-                    <button onclick="setHighlightColor('pink')" class="w-6 h-6 rounded-full bg-pink-300 border-2 border-pink-500 hover:border-pink-700 transition-all" title="Pink" id="color-pink"></button>
-                    <button onclick="setHighlightColor('blue')" class="w-6 h-6 rounded-full bg-blue-300 border-2 border-blue-500 hover:border-blue-700 transition-all" title="Blue" id="color-blue"></button>
+                    <button onclick="setHighlightColor('yellow')"
+                        class="w-6 h-6 rounded-full bg-yellow-300 border-2 border-yellow-500 hover:border-yellow-700 transition-all ring-2 ring-offset-2 ring-gray-700"
+                        title="Yellow" id="color-yellow"></button>
+                    <button onclick="setHighlightColor('green')"
+                        class="w-6 h-6 rounded-full bg-green-300 border-2 border-green-500 hover:border-green-700 transition-all"
+                        title="Green" id="color-green"></button>
+                    <button onclick="setHighlightColor('pink')"
+                        class="w-6 h-6 rounded-full bg-pink-300 border-2 border-pink-500 hover:border-pink-700 transition-all"
+                        title="Pink" id="color-pink"></button>
+                    <button onclick="setHighlightColor('blue')"
+                        class="w-6 h-6 rounded-full bg-blue-300 border-2 border-blue-500 hover:border-blue-700 transition-all"
+                        title="Blue" id="color-blue"></button>
                 </div>
                 <div class="w-px h-4 bg-gray-300"></div>
 
@@ -110,7 +118,7 @@
                         <img {% if i < 4 %} src="/api/book/{{ book_data.id }}/page/{{ i }}" {% else %}
                             data-src="/api/book/{{ book_data.id }}/page/{{ i }}" {% endif %}
                             class="w-full h-full object-contain opacity-0 transition-opacity duration-700"
-                            onload="this.style.opacity=1;" onerror="handleImageError(this, {{ i + 1 }});"/>
+                            onload="this.style.opacity=1;" onerror="handleImageError(this, {{ i + 1 }});" />
                         <div class="page-number text-[10px] text-gray-400 font-mono absolute bottom-4 right-4">{{ i + 1
                             }}</div>
                         <div class="annotations-layer absolute inset-0 z-20"></div>
@@ -138,6 +146,14 @@
         </div>
     </div>
 </div>
+
+<!-- Page Turn Sound Effect -->
+<audio id="page-turn-sound-1" preload="auto">
+    <source src="/static/sounds/page-turn.wav" type="audio/wav">
+</audio>
+<audio id="page-turn-sound-2" preload="auto">
+    <source src="/static/sounds/page-turn.wav" type="audio/wav">
+</audio>
 
 <style>
     /* Annotations */
@@ -357,6 +373,7 @@
             opacity: 0;
             transform: translateX(-10px);
         }
+
         to {
             opacity: 1;
             transform: translateX(0);
@@ -384,6 +401,20 @@
     let currentHighlightColor = 'yellow';
     let allNotes = [];
     let allHighlights = [];
+
+    // Play page turn sound effect
+    let currentAudioIndex = 0;
+    function playPageTurnSound() {
+        const audioIds = ['page-turn-sound-1', 'page-turn-sound-2'];
+        const audio = document.getElementById(audioIds[currentAudioIndex]);
+        currentAudioIndex = (currentAudioIndex + 1) % audioIds.length;
+
+        if (audio) {
+            audio.volume = 1.0;
+            audio.currentTime = 0;
+            audio.play().catch(() => { });
+        }
+    }
 
     $(document).ready(function () {
         const $flipbook = $('#flipbook');
@@ -501,10 +532,12 @@
                 autoCenter: true,
                 gradients: true,
                 elevation: 100,
-                duration: 1000,
+                duration: 600,
                 when: {
                     turning: function (e, page, view) {
                         load(view);
+                        // Play page turn sound effect immediately when turning starts
+                        playPageTurnSound();
                     },
                     turned: function (e, page, view) {
                         let pdfPages = view.map(v => v - 2).filter(v => v >= 0 && v < PDF_PAGE_COUNT);
