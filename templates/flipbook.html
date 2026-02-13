@@ -1,8 +1,6 @@
 {% extends "base.html" %}
-
 {% block content %}
 <div class="min-h-screen flex flex-col bg-[#d1d5db] font-sans selection:bg-blue-100 overflow-hidden">
-
     <!-- Premium Header -->
     <div class="px-8 py-4 flex items-center justify-between z-50 bg-white/80 backdrop-blur-md shadow-sm">
         <div class="flex items-center space-x-4">
@@ -61,8 +59,6 @@
     <!-- Flipbook Workspace -->
     <div
         class="flex-1 relative flex items-center justify-center p-4 md:p-12 overflow-hidden bg-gradient-to-b from-[#e5e7eb] to-[#d1d5db]">
-        <!-- ... existing content ... -->
-
         <!-- Navigation Arrows -->
         <button id="prev-btn"
             class="absolute left-6 md:left-12 z-40 w-16 h-16 rounded-full bg-white/20 hover:bg-white/90 text-gray-400 hover:text-gray-900 shadow-xl transition-all active:scale-95 hidden md:flex items-center justify-center backdrop-blur-sm group">
@@ -73,7 +69,6 @@
             class="absolute right-6 md:right-12 z-40 w-16 h-16 rounded-full bg-white/20 hover:bg-white/90 text-gray-400 hover:text-gray-900 shadow-xl transition-all active:scale-95 hidden md:flex items-center justify-center backdrop-blur-sm group">
             <i class="fas fa-chevron-right text-2xl group-hover:translate-x-1 transition-transform"></i>
         </button>
-
         <!-- The Book Architecture -->
         <div id="book-viewport" class="relative group">
             <!-- Shadow Depth -->
@@ -87,7 +82,6 @@
                     <div class="spine-thread"></div>
                     <div class="spine-thread"></div>
                 </div>
-
                 <div id="flipbook">
                     <!-- Front Cover -->
                     <div class="hardcover front-cover">
@@ -102,7 +96,6 @@
                             </div>
                         </div>
                     </div>
-
                     <!-- Page 1 (Internal Cover or Table of Contents) -->
                     <div class="page first-internal" data-page="0">
                         <div class="page-texture"></div>
@@ -110,7 +103,6 @@
                             onerror="handleImageError(this, 0)">
                         <div class="annotations-layer absolute inset-0 z-20"></div>
                     </div>
-
                     <!-- All Remaining PDF Pages -->
                     {% for i in range(1, book_data.page_count) %}
                     <div class="page" data-page="{{ i }}">
@@ -124,7 +116,6 @@
                         <div class="annotations-layer absolute inset-0 z-20"></div>
                     </div>
                     {% endfor %}
-
                     <!-- Optional Blank Page if count is odd (to keep back cover on the right side) -->
                     {% if (book_data.page_count + 1) % 2 != 0 %}
                     <div class="page blank-page">
@@ -132,7 +123,6 @@
                         <div class="w-full h-full bg-white"></div>
                     </div>
                     {% endif %}
-
                     <!-- Back Cover -->
                     <div class="hardcover back-cover">
                         <div class="w-full h-full flex flex-col items-center justify-center space-y-4">
@@ -146,7 +136,6 @@
         </div>
     </div>
 </div>
-
 <!-- Page Turn Sound Effect -->
 <audio id="page-turn-sound-1" preload="auto">
     <source src="/static/sounds/page-turn.wav" type="audio/wav">
@@ -154,7 +143,6 @@
 <audio id="page-turn-sound-2" preload="auto">
     <source src="/static/sounds/page-turn.wav" type="audio/wav">
 </audio>
-
 <style>
     /* Annotations */
     .note-marker {
@@ -173,12 +161,10 @@
         font-size: 12px;
         transition: transform 0.2s;
     }
-
     .note-marker:hover {
         transform: scale(1.1);
         z-index: 101;
     }
-
     .highlight-marker {
         position: absolute;
         background: rgba(255, 255, 0, 0.3);
@@ -188,51 +174,40 @@
         min-width: 10px;
         min-height: 4px;
     }
-
     .highlight-yellow {
         background: rgba(255, 255, 0, 0.3);
         border-bottom: 2px solid rgba(255, 255, 0, 0.5);
     }
-
     .highlight-yellow:hover {
         background: rgba(255, 255, 0, 0.5);
     }
-
     .highlight-green {
         background: rgba(34, 197, 94, 0.3);
         border-bottom: 2px solid rgba(34, 197, 94, 0.5);
     }
-
     .highlight-green:hover {
         background: rgba(34, 197, 94, 0.5);
     }
-
     .highlight-pink {
         background: rgba(244, 114, 182, 0.3);
         border-bottom: 2px solid rgba(244, 114, 182, 0.5);
     }
-
     .highlight-pink:hover {
         background: rgba(244, 114, 182, 0.5);
     }
-
     .highlight-blue {
         background: rgba(59, 130, 246, 0.3);
         border-bottom: 2px solid rgba(59, 130, 246, 0.5);
     }
-
     .highlight-blue:hover {
         background: rgba(59, 130, 246, 0.5);
     }
-
     .highlight-preview {
         box-shadow: inset 0 0 4px rgba(255, 165, 0, 0.3);
     }
-
     .highlight-marker:hover {
         background: rgba(255, 255, 0, 0.5);
     }
-
     .delete-annotation {
         position: absolute;
         top: -8px;
@@ -247,28 +222,23 @@
         align-items: center;
         justify-content: center;
     }
-
     .note-marker:hover .delete-annotation,
     .highlight-marker:hover .delete-annotation {
         display: flex;
     }
-
     .toolbar-active {
         background-color: #fef08a !important;
         color: #854d0e !important;
     }
-
     #flipbook {
         width: 1000px;
         height: 700px;
     }
-
     .page {
         background: #fff;
         position: relative;
         box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.05);
     }
-
     .page-texture {
         position: absolute;
         inset: 0;
@@ -277,7 +247,6 @@
         background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
         z-index: 10;
     }
-
     .page::after {
         content: "";
         position: absolute;
@@ -288,7 +257,6 @@
         pointer-events: none;
         opacity: 0.7;
     }
-
     .even.page::after {
         left: auto;
         right: 0;

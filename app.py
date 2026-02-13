@@ -11,7 +11,6 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 # --- Configuration ---
 database_url = os.environ.get('POSTGRES_URL')
-
 if database_url:
     # Fix PostgreSQL URL format for newer psycopg2 versions
     if database_url.startswith('postgres://'):
@@ -55,7 +54,7 @@ db = SQLAlchemy(app)
 _db_initialized = False
 _db_error = None
 
-# Initialize database tables (runs on Vercel + local)
+# Initialize database tables
 def init_db():
     global _db_initialized, _db_error
     if _db_initialized:
@@ -455,14 +454,12 @@ def handle_highlights(book_id):
 @app.route('/api/book/<int:book_id>/delete', methods=['DELETE'])
 def delete_book(book_id):
     book = Book.query.get_or_404(book_id)
-    
     # Remove files
     try:
         # PDF file
         pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], book.filename)
         if os.path.exists(pdf_path):
             os.remove(pdf_path)
-            
         # Pages directory
         pages_dir = os.path.join(os.getcwd(), app.config['PAGES_FOLDER'], str(book_id))
         if os.path.exists(pages_dir):
