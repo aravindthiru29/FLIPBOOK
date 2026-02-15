@@ -7,7 +7,6 @@ from datetime import datetime
 from flask import Flask, render_template, request, send_from_directory, jsonify, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
-
 app = Flask(__name__)
 # --- Configuration ---
 database_url = os.environ.get('POSTGRES_URL')
@@ -23,7 +22,6 @@ if database_url:
     
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     print(f"Using PostgreSQL: {database_url[:50]}...")
-    
     # Vercel-specific pool settings for PostgreSQL
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_size': 1,
@@ -47,13 +45,10 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['PAGES_FOLDER'] = os.path.join('static', 'pages')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
-
 db = SQLAlchemy(app)
-
 # Flag to track if database has been initialized
 _db_initialized = False
 _db_error = None
-
 # Initialize database tables
 def init_db():
     global _db_initialized, _db_error
@@ -63,23 +58,19 @@ def init_db():
     try:
         with app.app_context():
             print("Attempting database connection...")
-            
             # Test connection
             connection = db.engine.connect()
             print("✓ Database connection successful")
             connection.close()
-            
             # Create tables
             db.create_all()
             print("✓ Database tables created/verified")
-            
             if not os.path.exists(app.config['UPLOAD_FOLDER']):
                 os.makedirs(app.config['UPLOAD_FOLDER'])
                 print(f"✓ Created uploads folder")
             if not os.path.exists(app.config['PAGES_FOLDER']):
                 os.makedirs(app.config['PAGES_FOLDER'])
                 print(f"✓ Created pages folder")
-            
             _db_initialized = True
             print("✓ Database initialization complete")
     except Exception as e:
@@ -95,22 +86,18 @@ def before_request():
     if not _db_initialized:
         try:
             with app.app_context():
-                print("Attempting lazy database initialization...")
-                
+                print("Attempting lazy database initialization...")              
                 # Test connection
                 connection = db.engine.connect()
                 print("✓ Database connection successful")
                 connection.close()
-                
                 # Create tables
                 db.create_all()
                 print("✓ Database tables created/verified")
-                
                 if not os.path.exists(app.config['UPLOAD_FOLDER']):
                     os.makedirs(app.config['UPLOAD_FOLDER'])
                 if not os.path.exists(app.config['PAGES_FOLDER']):
                     os.makedirs(app.config['PAGES_FOLDER'])
-                    
                 _db_initialized = True
                 print("✓ Lazy initialization complete")
         except Exception as e:
@@ -118,7 +105,6 @@ def before_request():
             print(f"✗ Lazy initialization error: {e}")
             import traceback
             traceback.print_exc()
-
 # --- Models ---
 class Book(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -126,10 +112,8 @@ class Book(db.Model):
     filename = db.Column(db.String(255), nullable=False)
     page_count = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
     notes = db.relationship('Note', backref='book', lazy=True, cascade="all, delete-orphan")
     highlights = db.relationship('Highlight', backref='book', lazy=True, cascade="all, delete-orphan")
-
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     book_id = db.Column(db.Integer, db.ForeignKey('book.id'), nullable=False)
@@ -138,7 +122,6 @@ class Note(db.Model):
     x = db.Column(db.Float)  # Spatial coordinates
     y = db.Column(db.Float)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
 class Highlight(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     book_id = db.Column(db.Integer, db.ForeignKey('book.id'), nullable=False)
@@ -146,7 +129,6 @@ class Highlight(db.Model):
     coordinates = db.Column(db.JSON, nullable=False)  # JSON list of rects
     color = db.Column(db.String(50), default='yellow')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
 # --- PDF Utilities ---
 def get_pdf_metadata(filepath):
     doc = fitz.open(filepath)
@@ -154,97 +136,82 @@ def get_pdf_metadata(filepath):
     page_count = doc.page_count
     doc.close()
     return page_count, toc
-
 def render_pdf_page(filepath, page_num, output_folder):
     """Render a PDF page to JPG with error handling and fallback rendering"""
     doc = fitz.open(filepath)
     page = doc.load_page(page_num)
-    
     filename = f"page_{page_num}.jpg"
-    dest_path = os.path.join(output_folder, filename)
-    
+    dest_path = os.path.join(output_folder, filename)    
     if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-    
+        os.makedirs(output_folder)    
     try:
-        # Try with high quality scaling first
-        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), alpha=False)
-        
+        # Try with standard scaling (balanced quality and speed)
+        pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)      
         # Check if pixmap is valid and not empty
         if pix.n > 0:
-            pix.save(dest_path, "jpg")
+            pix.save(dest_path, "jpg", quality=85)
         else:
-            raise ValueError("Generated pixmap is empty")
-            
+            raise ValueError("Generated pixmap is empty")          
     except Exception as e:
         print(f"Warning: High-quality rendering failed for page {page_num}: {str(e)}")
         try:
-            # Fallback: Try with standard scaling
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
-            pix.save(dest_path, "jpg")
+            # Fallback: Try with lower scaling
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2), alpha=False)
+            pix.save(dest_path, "jpg", quality=85)
             print(f"Successfully rendered page {page_num} with fallback scaling")
         except Exception as e2:
             print(f"Warning: Fallback rendering failed for page {page_num}: {str(e2)}")
             try:
                 # Last resort: Try with 1x scaling
                 pix = page.get_pixmap(alpha=False)
-                pix.save(dest_path, "jpg")
+                pix.save(dest_path, "jpg", quality=85)
                 print(f"Successfully rendered page {page_num} with 1x scaling")
             except Exception as e3:
                 print(f"Error: Could not render page {page_num} with any scaling: {str(e3)}")
                 # Create a blank/error page so it doesn't fail completely
                 pix = page.get_pixmap(alpha=False)
-                pix.save(dest_path, "jpg")
-    
+                pix.save(dest_path, "jpg", quality=85)
     doc.close()
     return filename
-
 def pre_render_book(filepath, book_id, page_count):
     """Background task to pre-render all pages with error handling"""
     output_folder = os.path.join(os.getcwd(), app.config['PAGES_FOLDER'], str(book_id))
     print(f"Starting background pre-rendering for book {book_id} in {output_folder}...")
-    
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
-    
     doc = fitz.open(filepath)
     rendered_count = 0
     failed_pages = []
-    
     for i in range(page_count):
         page_filename = f"page_{i}.jpg"
-        page_path = os.path.join(output_folder, page_filename)
-        
+        page_path = os.path.join(output_folder, page_filename)        
         if not os.path.exists(page_path):
             try:
                 page = doc.load_page(i)
-                # Try with high quality scaling first
+                # Try with standard scaling
                 try:
-                    pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), alpha=False)
+                    pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
                     if pix.n > 0:
-                        pix.save(page_path, "jpg")
+                        pix.save(page_path, "jpg", quality=85)
                         rendered_count += 1
                         print(f"Pre-rendered page {i} successfully")
                     else:
                         raise ValueError("Empty pixmap")
                 except:
-                    # Fallback to standard quality
-                    pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+                    # Fallback to lower quality
+                    pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2), alpha=False)
                     pix.save(page_path, "jpg")
                     rendered_count += 1
                     print(f"Pre-rendered page {i} with fallback quality")
-                    
             except Exception as e:
                 print(f"Error pre-rendering page {i}: {str(e)}")
                 failed_pages.append(i)
         else:
             rendered_count += 1
-    
     doc.close()
     print(f"Background pre-rendering complete for book {book_id}. Rendered: {rendered_count}/{page_count}")
     if failed_pages:
         print(f"Failed pages: {failed_pages}")
-
 # --- Routes ---
 @app.route('/health')
 def health_check():
@@ -254,8 +221,7 @@ def health_check():
         'initialized': _db_initialized,
         'db_error': _db_error,
         'postgres_url': 'configured' if os.environ.get('POSTGRES_URL') else 'missing'
-    }
-    
+    } 
     try:
         # Test database connection
         print("[Health Check] Testing database connection...")
@@ -275,7 +241,6 @@ def health_check():
         import traceback
         traceback.print_exc()
         return jsonify(result), 503
-
 @app.route('/')
 def index():
     try:
@@ -284,7 +249,6 @@ def index():
     except Exception as e:
         print(f"Index error: {str(e)}")
         return jsonify({'error': 'Database connection failed'}), 503
-
 @app.route('/upload', methods=['POST'])
 def upload_file():
     try:
@@ -293,36 +257,29 @@ def upload_file():
         file = request.files['file']
         if file.filename == '':
             return jsonify({'error': 'No selected file'}), 400
-        
         if file and file.filename.lower().endswith('.pdf'):
             # Ensure upload folder exists
             if not os.path.exists(app.config['UPLOAD_FOLDER']):
                 os.makedirs(app.config['UPLOAD_FOLDER'])
-            
             filename = secure_filename(file.filename)
             # Unique folder for each book to avoid collisions
             unique_id = str(uuid.uuid4())[:8]
             save_name = f"{unique_id}_{filename}"
-            
             # Ensure absolute path for saving the uploaded PDF
             file_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], save_name))
             file.save(file_path)
             print(f"Uploaded PDF saved to: {file_path}")
-            
             # Get metadata and add print statements
             print(f"Opening PDF for metadata extraction: {file_path}")
             page_count, toc = get_pdf_metadata(file_path)
             print(f"PDF opened successfully. Total pages: {page_count}")
-            
             new_book = Book(title=filename, filename=save_name, page_count=page_count)
             db.session.add(new_book)
             db.session.commit()
-            
             # Start background pre-rendering
             thread = threading.Thread(target=pre_render_book, args=(file_path, new_book.id, page_count))
             thread.daemon = True
-            thread.start()
-            
+            thread.start()            
             return jsonify({
                 'success': True,
                 'book_id': new_book.id,
@@ -330,32 +287,25 @@ def upload_file():
                 'page_count': new_book.page_count,
                 'redirect': url_for('view_book', book_id=new_book.id)
             })
-        
         return jsonify({'error': 'Invalid file type'}), 400
-    
     except Exception as e:
         print(f"Upload error: {str(e)}")
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
-
 @app.route('/book/<int:book_id>')
 def view_book(book_id):
     book = Book.query.get_or_404(book_id)
     return render_template('flipbook.html', book_data=book)
-
 @app.route('/api/book/<int:book_id>/page/<int:page_num>')
 def get_page(book_id, page_num):
     book = Book.query.get_or_404(book_id)
     file_path = os.path.join(os.getcwd(), app.config['UPLOAD_FOLDER'], book.filename)
-    
     # Check if page is already rendered
     book_page_folder = os.path.join(os.getcwd(), app.config['PAGES_FOLDER'], str(book_id))
     page_filename = f"page_{page_num}.jpg"
-    page_path = os.path.join(book_page_folder, page_filename)
-    
+    page_path = os.path.join(book_page_folder, page_filename)    
     # Validate page number
     if page_num < 0 or page_num >= book.page_count:
         return jsonify({'error': 'Page number out of range'}), 404
-    
     if not os.path.exists(page_path):
         print(f"Rendering page {page_num} for book {book_id}...")
         try:
@@ -367,8 +317,7 @@ def get_page(book_id, page_num):
             return jsonify({
                 'error': f'Failed to render page {page_num}. The PDF page may be corrupted or empty.',
                 'details': str(e)
-            }), 500
-    
+            }), 500    
     # Check if the file actually exists and has content
     if os.path.exists(page_path):
         file_size = os.path.getsize(page_path)
@@ -377,16 +326,13 @@ def get_page(book_id, page_num):
         else:
             print(f"Warning: Page file {page_path} is empty (0 bytes)")
             return jsonify({'error': 'Rendered page is empty. The PDF page may be blank or corrupted.'}), 500
-    else:
-        return jsonify({'error': f'Could not render page {page_num}'}), 500
-
+    return jsonify({'error': f'Could not render page {page_num}'}), 500
 @app.route('/api/book/<int:book_id>/toc')
 def get_toc(book_id):
     book = Book.query.get_or_404(book_id)
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], book.filename)
     _, toc = get_pdf_metadata(file_path)
     return jsonify(toc)
-
 # Notes API
 @app.route('/api/book/<int:book_id>/notes', methods=['GET', 'POST'])
 def handle_notes(book_id):
@@ -406,7 +352,6 @@ def handle_notes(book_id):
             db.session.add(new_note)
             db.session.commit()
             return jsonify({'id': new_note.id, 'success': True})
-        
         notes = Note.query.filter_by(book_id=book_id).all()
         return jsonify([{
             'id': n.id,
@@ -438,7 +383,6 @@ def handle_highlights(book_id):
             db.session.add(new_highlight)
             db.session.commit()
             return jsonify({'id': new_highlight.id, 'success': True})
-        
         highlights = Highlight.query.filter_by(book_id=book_id).all()
         return jsonify([{
             'id': h.id,
@@ -450,7 +394,6 @@ def handle_highlights(book_id):
         db.session.rollback()
         print(f"Highlights API error: {str(e)}")
         return jsonify({'error': f'Highlights operation failed: {str(e)}'}), 500
-
 @app.route('/api/book/<int:book_id>/delete', methods=['DELETE'])
 def delete_book(book_id):
     book = Book.query.get_or_404(book_id)
@@ -465,35 +408,27 @@ def delete_book(book_id):
         if os.path.exists(pages_dir):
             import shutil
             shutil.rmtree(pages_dir)
-            
     except Exception as e:
         print(f"Error deleting files: {e}")
-
     # Remove from DB
     db.session.delete(book)
     db.session.commit()
-    
     return jsonify({'success': True})
-
 @app.route('/api/book/<int:book_id>', methods=['PUT'])
 def update_book(book_id):
     try:
         book = Book.query.get_or_404(book_id)
         data = request.json
-        
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-        
         if 'title' in data:
             book.title = data['title']
-            
         db.session.commit()
         return jsonify({'success': True, 'title': book.title})
     except Exception as e:
         db.session.rollback()
         print(f"Update book error: {str(e)}")
         return jsonify({'error': f'Update failed: {str(e)}'}), 500
-
 @app.route('/api/note/<int:note_id>', methods=['DELETE'])
 def delete_note(note_id):
     try:
@@ -505,7 +440,6 @@ def delete_note(note_id):
         db.session.rollback()
         print(f"Delete note error: {str(e)}")
         return jsonify({'error': f'Delete failed: {str(e)}'}), 500
-
 @app.route('/api/highlight/<int:highlight_id>', methods=['DELETE'])
 def delete_highlight(highlight_id):
     try:
@@ -517,7 +451,5 @@ def delete_highlight(highlight_id):
         db.session.rollback()
         print(f"Delete highlight error: {str(e)}")
         return jsonify({'error': f'Delete failed: {str(e)}'}), 500
-
 if __name__ == '__main__':
     app.run(debug=True)
-

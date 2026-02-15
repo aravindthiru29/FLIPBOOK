@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -24,17 +23,14 @@
             background-color: #f8f9fa;
             color: #333;
         }
-
         .animate-fade-in {
             animation: fadeIn 0.5s ease-out forwards;
         }
-
         @keyframes fadeIn {
             from {
                 opacity: 0;
                 transform: translateY(10px);
             }
-
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -43,16 +39,13 @@
     </style>
     {% block extra_css %}{% endblock %}
 </head>
-
 <body class="font-sans antialiased">
     <div class="min-h-screen">
         <main class="w-full">
             {% block content %}{% endblock %}
         </main>
     </div>
-
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     {% block scripts %}{% endblock %}
 </body>
-
 </html>

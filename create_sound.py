@@ -3,21 +3,17 @@ import math
 import struct
 import os
 import random
-
 def create_page_turn_sound(filename, duration=0.2):
-    """
-    Create a quick page turn sound effect with no delay.
-    Args:
+    """Create a quick page turn sound effect with no delay.
+        Args:
         filename: Output WAV file path
-        duration: Duration of the sound in seconds (default 0.2s)
-    """
+        duration: Duration of the sound in seconds (default 0.2s) """
     sample_rate = 44100  # 44.1 kHz sample rate
     num_samples = int(sample_rate * duration)    
     # Create sound data
     frames = []
     # Seed random for consistent sound
     random.seed(42)
-
     for i in range(num_samples):
         t = i / sample_rate
         # Quick snap sound - paper flick
