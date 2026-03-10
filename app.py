@@ -44,9 +44,18 @@ else:
         'connect_args': {'timeout': 30}
     }
 
+# --- Vercel Compatibility ---
+IS_VERCEL = os.environ.get('VERCEL') == '1'
+
+if IS_VERCEL:
+    app.config['UPLOAD_FOLDER'] = '/tmp/uploads'
+    app.config['PAGES_FOLDER'] = '/tmp/pages'
+    print("Running on Vercel: Using /tmp for storage")
+else:
+    app.config['UPLOAD_FOLDER'] = 'uploads'
+    app.config['PAGES_FOLDER'] = os.path.join('static', 'pages')
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['PAGES_FOLDER'] = os.path.join('static', 'pages')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
 db = SQLAlchemy(app)
 # Flag to track if database has been initialized
@@ -188,10 +197,11 @@ def render_pdf_page(filepath, page_num, output_folder):
     return filename
 def pre_render_book(filepath, book_id, page_count):
     """Background task to pre-render all pages with error handling"""
-    output_folder = os.path.join(os.getcwd(), app.config['PAGES_FOLDER'], str(book_id))
+    # Use config directly, handle absolute paths like /tmp correctly
+    output_folder = os.path.join(app.config['PAGES_FOLDER'], str(book_id))
     print(f"Starting background pre-rendering for book {book_id} in {output_folder}...")
     if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+        os.makedirs(output_folder, exist_ok=True)
     doc = fitz.open(filepath)
     rendered_count = 0
     failed_pages = []
@@ -332,9 +342,9 @@ def view_book(book_id):
 @app.route('/api/book/<int:book_id>/page/<int:page_num>')
 def get_page(book_id, page_num):
     book = Book.query.get_or_404(book_id)
-    file_path = os.path.join(os.getcwd(), app.config['UPLOAD_FOLDER'], book.filename)
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], book.filename)
     # Check if page is already rendered
-    book_page_folder = os.path.join(os.getcwd(), app.config['PAGES_FOLDER'], str(book_id))
+    book_page_folder = os.path.join(app.config['PAGES_FOLDER'], str(book_id))
     page_filename = f"page_{page_num}.jpg"
     page_path = os.path.join(book_page_folder, page_filename)    
     # Validate page number
@@ -439,7 +449,7 @@ def delete_book(book_id):
         if os.path.exists(pdf_path):
             os.remove(pdf_path)
         # Pages directory
-        pages_dir = os.path.join(os.getcwd(), app.config['PAGES_FOLDER'], str(book_id))
+        pages_dir = os.path.join(app.config['PAGES_FOLDER'], str(book_id))
         if os.path.exists(pages_dir):
             import shutil
             shutil.rmtree(pages_dir)
