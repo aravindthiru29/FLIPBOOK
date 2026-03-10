@@ -114,11 +114,25 @@ $(document).ready(function () {
                 const src = $img.attr('data-src') || $img.attr('src');
                 if (src && !$img.attr('src')) {
                     $img.attr('src', src).removeAttr('data-src');
+                }
 
-                    // Add error handling for failed image loads
-                    $img.on('error', function () {
+                // Reliability fix: Ensure opacity is updated even if load event is missed
+                if ($img.prop('complete')) {
+                    $img.css('opacity', '1');
+                } else {
+                    $img.on('load', function () {
+                        $(this).css('opacity', '1');
+                    }).on('error', function () {
                         handleImageError(this, v);
                     });
+
+                    // Fail-safe: Force visible after 5s regardless of event
+                    setTimeout(() => {
+                        if ($img.css('opacity') === '0') {
+                            $img.css('opacity', '1');
+                            console.warn(`Forced visibility for page ${v} after timeout`);
+                        }
+                    }, 5000);
                 }
                 loaded.add(v);
             }

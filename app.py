@@ -160,33 +160,39 @@ def get_pdf_metadata(filepath):
     return page_count, toc
 def render_pdf_page(filepath, page_num, output_folder):
     """Render a PDF page to JPG with error handling and fallback rendering"""
+    if not os.path.exists(filepath):
+        print(f"Error: PDF file not found at {filepath}")
+        raise FileNotFoundError(f"PDF file missing: {filepath}")
+
     doc = fitz.open(filepath)
     page = doc.load_page(page_num)
     filename = f"page_{page_num}.jpg"
     dest_path = os.path.join(output_folder, filename)    
     if not os.path.exists(output_folder):
-        os.makedirs(output_folder)    
+        os.makedirs(output_folder, exist_ok=True)    
     try:
-        # Try with standard scaling (balanced quality and speed)
-        pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)      
+        # Use slightly lower scale for Vercel to save memory/time
+        scale = 1.2 if IS_VERCEL else 1.5
+        pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)      
         # Check if pixmap is valid and not empty
         if pix.n > 0:
-            pix.save(dest_path, "jpg", quality=85)
+            pix.save(dest_path, "jpg", quality=80 if IS_VERCEL else 85)
         else:
             raise ValueError("Generated pixmap is empty")          
     except Exception as e:
         print(f"Warning: High-quality rendering failed for page {page_num}: {str(e)}")
         try:
             # Fallback: Try with lower scaling
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2), alpha=False)
-            pix.save(dest_path, "jpg", quality=85)
+            scale = 1.0 if IS_VERCEL else 1.2
+            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+            pix.save(dest_path, "jpg", quality=80)
             print(f"Successfully rendered page {page_num} with fallback scaling")
         except Exception as e2:
             print(f"Warning: Fallback rendering failed for page {page_num}: {str(e2)}")
             try:
-                # Last resort: Try with 1x scaling
+                # Last resort: Try with 1x scaling (default)
                 pix = page.get_pixmap(alpha=False)
-                pix.save(dest_path, "jpg", quality=85)
+                pix.save(dest_path, "jpg", quality=80)
                 print(f"Successfully rendered page {page_num} with 1x scaling")
             except Exception as e3:
                 print(f"Error: Could not render page {page_num} with any scaling: {str(e3)}")
@@ -320,10 +326,11 @@ def upload_file():
             new_book = Book(title=filename, filename=save_name, page_count=page_count)
             db.session.add(new_book)
             db.session.commit()
-            # Start background pre-rendering
-            thread = threading.Thread(target=pre_render_book, args=(file_path, new_book.id, page_count))
-            thread.daemon = True
-            thread.start()            
+            # Start background pre-rendering (Disabled on Vercel due to ephemeral nature)
+            if not IS_VERCEL:
+                thread = threading.Thread(target=pre_render_book, args=(file_path, new_book.id, page_count))
+                thread.daemon = True
+                thread.start()            
             return jsonify({
                 'success': True,
                 'book_id': new_book.id,
@@ -339,6 +346,9 @@ def upload_file():
 def view_book(book_id):
     book = Book.query.get_or_404(book_id)
     return render_template('flipbook.html', book_data=book)
+# Lock for rendering to prevent concurrent writes to the same file
+render_lock = threading.Lock()
+
 @app.route('/api/book/<int:book_id>/page/<int:page_num>')
 def get_page(book_id, page_num):
     book = Book.query.get_or_404(book_id)
@@ -347,30 +357,28 @@ def get_page(book_id, page_num):
     book_page_folder = os.path.join(app.config['PAGES_FOLDER'], str(book_id))
     page_filename = f"page_{page_num}.jpg"
     page_path = os.path.join(book_page_folder, page_filename)    
+    
     # Validate page number
     if page_num < 0 or page_num >= book.page_count:
         return jsonify({'error': 'Page number out of range'}), 404
-    if not os.path.exists(page_path):
-        print(f"Rendering page {page_num} for book {book_id}...")
-        try:
-            render_pdf_page(file_path, page_num, book_page_folder)
-            print(f"Successfully rendered {page_path}")
-        except Exception as e:
-            print(f"Error rendering page {page_num}: {str(e)}")
-            # Return a proper error response instead of crashing
-            return jsonify({
-                'error': f'Failed to render page {page_num}. The PDF page may be corrupted or empty.',
-                'details': str(e)
-            }), 500    
-    # Check if the file actually exists and has content
-    if os.path.exists(page_path):
-        file_size = os.path.getsize(page_path)
-        if file_size > 0:
-            return send_from_directory(book_page_folder, page_filename)
-        else:
-            print(f"Warning: Page file {page_path} is empty (0 bytes)")
-            return jsonify({'error': 'Rendered page is empty. The PDF page may be blank or corrupted.'}), 500
-    return jsonify({'error': f'Could not render page {page_num}'}), 500
+
+    # If file doesn't exist or is empty, try to render it
+    if not os.path.exists(page_path) or os.path.getsize(page_path) == 0:
+        with render_lock:
+            # Check again inside lock (double-checked locking pattern)
+            if not os.path.exists(page_path) or os.path.getsize(page_path) == 0:
+                print(f"Rendering page {page_num} for book {book_id}...")
+                try:
+                    render_pdf_page(file_path, page_num, book_page_folder)
+                except Exception as e:
+                    print(f"Error rendering page {page_num}: {str(e)}")
+                    return jsonify({'error': 'Rendering failed'}), 500
+    
+    # Verify the file was created and is not empty before sending
+    if os.path.exists(page_path) and os.path.getsize(page_path) > 0:
+        return send_from_directory(book_page_folder, page_filename)
+    
+    return jsonify({'error': 'Page temporarily unavailable'}), 503
 @app.route('/api/book/<int:book_id>/toc')
 def get_toc(book_id):
     book = Book.query.get_or_404(book_id)
