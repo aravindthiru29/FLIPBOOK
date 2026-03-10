@@ -31,10 +31,12 @@
             </div>
             <h3 class="text-xl font-bold text-gray-900 mb-2">No documents found</h3>
             <p class="text-gray-400 max-w-sm mb-10">You haven't uploaded any PDF files yet. Let's get started!</p>
+            {% if session.get('is_admin') %}
             <button onclick="document.getElementById('pdf-input').click()"
                 class="bg-gray-900 text-white px-8 py-3 rounded-2xl font-bold hover:bg-black transition-all">
                 Choose a File
             </button>
+            {% endif %}
         </div>
         {% endif %}
         {% for book in books %}
@@ -59,6 +61,7 @@
                         title="Share Link">
                         <i class="fas fa-share-alt"></i>
                     </button>
+                    {% if session.get('is_admin') %}
                     <button onclick="editBook('{{ book.id }}', this.dataset.title)" data-title="{{ book.title }}"
                         class="bg-white text-yellow-500 w-10 h-10 flex items-center justify-center rounded-xl shadow-xl border border-yellow-50 hover:bg-yellow-500 hover:text-white transition-all scale-90 group-hover:scale-100">
                         <i class="fas fa-pen"></i>
@@ -67,6 +70,7 @@
                         class="bg-white text-red-500 w-10 h-10 flex items-center justify-center rounded-xl shadow-xl border border-red-50 hover:bg-red-500 hover:text-white transition-all scale-90 group-hover:scale-100">
                         <i class="fas fa-trash"></i>
                     </button>
+                    {% endif %}
                 </div>
             </div>
             <div class="p-6">
@@ -119,6 +123,15 @@
             <span id="toast-message" class="text-sm font-bold">Link copied to clipboard!</span>
         </div>
     </div>
+
+    <!-- Admin Link -->
+    <footer class="mt-20 py-8 border-t border-gray-100 text-center">
+        {% if session.get('is_admin') %}
+        <a href="{{ url_for('admin_dashboard') }}" class="text-[10px] font-black uppercase tracking-widest text-blue-500 hover:text-blue-700 transition-colors">Admin Dashboard</a>
+        {% else %}
+        <a href="{{ url_for('admin_login') }}" class="text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-gray-500 transition-colors">Admin Access</a>
+        {% endif %}
+    </footer>
 </div>
 {% endblock %}
 {% block scripts %}

@@ -60,9 +60,10 @@ $(document).ready(function () {
         const $el = $(`
             <div class="note-marker" style="left:${note.x}%; top:${note.y}%" title="${note.content}">
                 <i class="fas fa-sticky-note text-[10px]"></i>
+                ${WINDOW_BOOK_DATA.is_admin ? `
                 <div class="delete-annotation" onclick="deleteNote(${note.id}, this); event.stopPropagation();">
                     <i class="fas fa-times"></i>
-                </div>
+                </div>` : ''}
             </div>
         `);
         $el.click((e) => {
@@ -79,9 +80,10 @@ $(document).ready(function () {
         const colorClass = `highlight-${hl.color || 'yellow'}`;
         const $el = $(`
             <div class="highlight-marker ${colorClass}" style="left:${rect.x}%; top:${rect.y}%; width:${rect.w}%; height:${rect.h}%;">
+                ${WINDOW_BOOK_DATA.is_admin ? `
                 <div class="delete-annotation" onclick="deleteHighlight(${hl.id}, this); event.stopPropagation();">
                     <i class="fas fa-times"></i>
-                </div>
+                </div>` : ''}
             </div>
         `);
         $layer.append($el);

@@ -152,7 +152,8 @@
 <script>
     const WINDOW_BOOK_DATA = {
         id: '{{ book_data.id }}',
-        page_count: '{{ book_data.page_count }}'
+        page_count: '{{ book_data.page_count }}',
+        is_admin: '{{ "true" if session.get("is_admin") else "false" }}' === 'true'
     };
 </script>
 <script src="{{ url_for('static', filename='flipbook-viewer.js') }}"></script>

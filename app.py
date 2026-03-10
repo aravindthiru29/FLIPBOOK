@@ -4,10 +4,13 @@ import json
 import uuid
 import threading
 from datetime import datetime
-from flask import Flask, render_template, request, send_from_directory, jsonify, url_for
+from flask import Flask, render_template, request, send_from_directory, jsonify, url_for, session, redirect
+from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-123')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 # --- Configuration ---
 database_url = os.environ.get('POSTGRES_URL')
 if database_url:
@@ -78,7 +81,6 @@ def init_db():
         print(f"✗ Database initialization error: {e}")
         import traceback
         traceback.print_exc()
-
 # Register before_request handler for Vercel compatibility
 @app.before_request
 def before_request():
@@ -105,6 +107,17 @@ def before_request():
             print(f"✗ Lazy initialization error: {e}")
             import traceback
             traceback.print_exc()
+# --- Auth Decorator ---
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('is_admin'):
+            if request.is_json:
+                return jsonify({'error': 'Admin access required'}), 403
+            return redirect(url_for('admin_login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 # --- Models ---
 class Book(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -249,6 +262,27 @@ def index():
     except Exception as e:
         print(f"Index error: {str(e)}")
         return jsonify({'error': 'Database connection failed'}), 503
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        password = request.form.get('password')
+        if password == ADMIN_PASSWORD:
+            session['is_admin'] = True
+            return redirect(url_for('admin_dashboard'))
+        return render_template('admin_login.html', error="Invalid password")
+    return render_template('admin_login.html')
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('is_admin', None)
+    return redirect(url_for('index'))
+
+@app.route('/admin')
+@admin_required
+def admin_dashboard():
+    books = Book.query.order_by(Book.created_at.desc()).all()
+    return render_template('admin_dashboard.html', books=books)
 @app.route('/upload', methods=['POST'])
 def upload_file():
     try:
@@ -395,6 +429,7 @@ def handle_highlights(book_id):
         print(f"Highlights API error: {str(e)}")
         return jsonify({'error': f'Highlights operation failed: {str(e)}'}), 500
 @app.route('/api/book/<int:book_id>/delete', methods=['DELETE'])
+@admin_required
 def delete_book(book_id):
     book = Book.query.get_or_404(book_id)
     # Remove files
@@ -415,6 +450,7 @@ def delete_book(book_id):
     db.session.commit()
     return jsonify({'success': True})
 @app.route('/api/book/<int:book_id>', methods=['PUT'])
+@admin_required
 def update_book(book_id):
     try:
         book = Book.query.get_or_404(book_id)
@@ -430,6 +466,7 @@ def update_book(book_id):
         print(f"Update book error: {str(e)}")
         return jsonify({'error': f'Update failed: {str(e)}'}), 500
 @app.route('/api/note/<int:note_id>', methods=['DELETE'])
+@admin_required
 def delete_note(note_id):
     try:
         note = Note.query.get_or_404(note_id)
@@ -441,6 +478,7 @@ def delete_note(note_id):
         print(f"Delete note error: {str(e)}")
         return jsonify({'error': f'Delete failed: {str(e)}'}), 500
 @app.route('/api/highlight/<int:highlight_id>', methods=['DELETE'])
+@admin_required
 def delete_highlight(highlight_id):
     try:
         highlight = Highlight.query.get_or_404(highlight_id)
