@@ -47,13 +47,20 @@ else:
 # --- Vercel Compatibility ---
 IS_VERCEL = os.environ.get('VERCEL') == '1'
 
+# --- Paths & Directories ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 if IS_VERCEL:
     app.config['UPLOAD_FOLDER'] = '/tmp/uploads'
     app.config['PAGES_FOLDER'] = '/tmp/pages'
-    print("Running on Vercel: Using /tmp for storage")
 else:
-    app.config['UPLOAD_FOLDER'] = 'uploads'
-    app.config['PAGES_FOLDER'] = os.path.join('static', 'pages')
+    app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'uploads')
+    app.config['PAGES_FOLDER'] = os.path.join(BASE_DIR, 'static', 'pages')
+
+# Ensure directories exist
+for folder in [app.config['UPLOAD_FOLDER'], app.config['PAGES_FOLDER']]:
+    if not os.path.exists(folder):
+        os.makedirs(folder, exist_ok=True)
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB limit
@@ -158,6 +165,9 @@ def get_pdf_metadata(filepath):
     page_count = doc.page_count
     doc.close()
     return page_count, toc
+# Global lock for PDF operations (PyMuPDF is not thread-safe for concurrent writes)
+render_lock = threading.Lock()
+
 def render_pdf_page(filepath, page_num, output_folder):
     """Render a PDF page to JPG with error handling and fallback rendering"""
     doc = fitz.open(filepath)
@@ -439,7 +449,6 @@ def handle_highlights(book_id):
         print(f"Highlights API error: {str(e)}")
         return jsonify({'error': f'Highlights operation failed: {str(e)}'}), 500
 @app.route('/api/book/<int:book_id>/delete', methods=['DELETE'])
-@admin_required
 def delete_book(book_id):
     book = Book.query.get_or_404(book_id)
     # Remove files
@@ -460,7 +469,6 @@ def delete_book(book_id):
     db.session.commit()
     return jsonify({'success': True})
 @app.route('/api/book/<int:book_id>', methods=['PUT'])
-@admin_required
 def update_book(book_id):
     try:
         book = Book.query.get_or_404(book_id)

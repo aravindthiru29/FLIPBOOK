@@ -93,13 +93,10 @@ $(document).ready(function () {
     function load(view) {
         view.forEach(v => {
             if (v <= 0) return;
-            // The .page elements are 0-indexed in jQuery collection, 
-            // but Turn.js views are 1-indexed. 
-            // In our HTML, page 0 is index 0, page 1 is index 1, etc.
-            // Turn.js 'view' for double display returns [pageL, pageR]
-            const $p = $flipbook.find(`.page[data-page="${v - 1}"]`);
+            // The .page elements are 0-indexed in jQuery collection
+            // Page 1 is Front Cover (no data-page), Page 2 is PDF Page 0 (data-page="0")
+            const $p = $flipbook.find(`.page[data-page="${v - 2}"]`);
             if ($p.length === 0) return;
-
             // Image Lazy Load with error handling
             const $img = $p.find('img');
             if ($img.length && !loaded.has(v)) {
@@ -131,6 +128,29 @@ $(document).ready(function () {
         });
     }
 
+    // Debounced load function to prevent request flooding
+    const debouncedLoad = _.debounce(function (view) {
+        load(view);
+    }, 150);
+
+    // Function to show images that were loaded via HTML src
+    function showInitialImages() {
+        $flipbook.find('.page img[src]').each(function () {
+            const $img = $(this);
+            if ($img.prop('complete')) {
+                $img.css('opacity', '1');
+            } else {
+                $img.on('load', function () {
+                    $(this).css('opacity', '1');
+                }).on('error', function () {
+                    const $p = $(this).closest('.page');
+                    const v = parseInt($p.data('page')) + 2;
+                    handleImageError(this, v);
+                });
+            }
+        });
+    }
+
     function preloadPages(currentPage) {
         // Preload next 3 spreads (6 pages)
         const pagesToPreload = [];
@@ -145,19 +165,47 @@ $(document).ready(function () {
         }
     }
 
+    // --- RESPONSIVE HELPERS ---
+    function getBookSize() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const isMobile = width < 768;
+
+        if (isMobile) {
+            // Mobile: Single page, aspect ratio roughly same as portrait page
+            const w = width * 0.95;
+            const h = height * 0.7; // 70% of viewport height
+            return { width: w, height: h, display: 'single' };
+        } else {
+            // Desktop: Double page (1000x700 default)
+            const w = Math.min(1000, width * 0.9);
+            const h = (w / 1000) * 700;
+            return { width: w, height: h, display: 'double' };
+        }
+    }
+
+    function resizeFlipbook() {
+        const size = getBookSize();
+        if ($flipbook.turn('is')) {
+            $flipbook.turn('size', size.width, size.height);
+            $flipbook.turn('display', size.display);
+        }
+    }
+
     // Initialize Flipbook
+    const initialSize = getBookSize();
     try {
         $flipbook.turn({
-            width: 1000,
-            height: 700,
-            display: 'double',
+            width: initialSize.width,
+            height: initialSize.height,
+            display: initialSize.display,
             autoCenter: true,
             gradients: true,
             elevation: 100,
             duration: 600,
             when: {
                 turning: function (e, page, view) {
-                    load(view);
+                    debouncedLoad(view);
                     // Play page turn sound effect immediately when turning starts
                     playPageTurnSound();
                 },
@@ -179,6 +227,9 @@ $(document).ready(function () {
     } catch (e) {
         console.error("Turn.js error:", e);
     }
+
+    // Resize listener
+    $(window).resize(_.debounce(resizeFlipbook, 150));
 
     // Controls
     $('#prev-btn').click(() => $flipbook.turn("previous"));
@@ -384,8 +435,13 @@ $(document).ready(function () {
 
     // Initial load
     setTimeout(() => {
+        showInitialImages();
         load($flipbook.turn("view"));
         preloadAnnotations();
+        // Preload next spread automatically
+        const currentView = $flipbook.turn("view");
+        const lastPage = Math.max(...currentView);
+        preloadPages(lastPage);
     }, 300);
 });
 
@@ -394,8 +450,18 @@ function handleImageError(img, pageNum) {
     img.style.opacity = '1';
     img.style.backgroundColor = '#fff3cd';
     const errorDiv = document.createElement('div');
-    errorDiv.style.cssText = 'position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #fff3cd; color: #856404; font-size: 14px; z-index: 5;';
-    errorDiv.innerHTML = `Failed to load page ${pageNum}<br><small>The PDF page may be blank or corrupted</small>`;
+    errorDiv.style.cssText = 'position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fff3cd; color: #856404; font-size: 14px; z-index: 1000; text-align: center; padding: 20px;';
+
+    // Determine if it's a cover or a numbered page
+    const label = (pageNum === 1) ? 'Front Cover' : `Page ${pageNum - 1}`;
+    const src = img.getAttribute('src') || 'Unknown';
+
+    errorDiv.innerHTML = `
+        <i class="fas fa-exclamation-triangle text-2xl mb-2"></i>
+        <div class="font-bold">Failed to load ${label}</div>
+        <div class="text-[11px] mt-1 opacity-70">URL: ${src}</div>
+        <div class="text-[10px] mt-2 bg-white/50 px-2 py-1 rounded">The PDF page may be blank or corrupted</div>
+    `;
     img.parentElement.appendChild(errorDiv);
 }
 

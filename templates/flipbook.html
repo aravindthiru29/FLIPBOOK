@@ -14,9 +14,8 @@
                 {{ book_data.title }}
             </h1>
         </div>
-
-        <div class="flex items-center space-x-6">
-            <div class="flex items-center px-4 py-2 bg-gray-100 rounded-full space-x-4 border border-gray-200">
+        <div class="flex items-center space-x-2 md:space-x-6">
+            <div class="flex items-center px-2 md:px-4 py-1.5 md:py-2 bg-gray-100 rounded-full space-x-2 md:space-x-4 border border-gray-200">
                 <!-- Annotation Tools -->
                 <button id="note-mode-btn" onclick="toggleMode('note')"
                     class="text-gray-500 hover:text-yellow-600 transition-colors" title="Add Note">
@@ -41,19 +40,18 @@
                         class="w-6 h-6 rounded-full bg-blue-300 border-2 border-blue-500 hover:border-blue-700 transition-all"
                         title="Blue" id="color-blue"></button>
                 </div>
-                <div class="w-px h-4 bg-gray-300"></div>
+                <div class="w-px h-4 bg-gray-300 hidden sm:block"></div>
 
-                <button onclick="toggleWarmth()" class="text-gray-500 hover:text-orange-600 transition-colors"
+                <button onclick="toggleWarmth()" class="text-gray-500 hover:text-orange-600 transition-colors hidden sm:block"
                     title="Reading Mode">
                     <i class="fas fa-eye"></i>
                 </button>
-                <div class="w-px h-4 bg-gray-300"></div>
+                <div class="w-px h-4 bg-gray-300 hidden sm:block"></div>
                 <div class="text-[11px] font-black text-gray-500 uppercase tracking-widest">
                     <span id="current-pages-range" class="text-blue-600">1</span> / {{ book_data.page_count }}
                 </div>
             </div>
-
-            <button id="fullscreen-btn" class="p-2 text-gray-400 hover:text-gray-900 transition-colors">
+            <button id="fullscreen-btn" class="p-2 text-gray-400 hover:text-gray-900 transition-colors hidden sm:block">
                 <i class="fas fa-expand"></i>
             </button>
         </div>
@@ -72,12 +70,21 @@
             class="absolute right-6 md:right-12 z-40 w-16 h-16 rounded-full bg-white/20 hover:bg-white/90 text-gray-400 hover:text-gray-900 shadow-xl transition-all active:scale-95 hidden md:flex items-center justify-center backdrop-blur-sm group">
             <i class="fas fa-chevron-right text-2xl group-hover:translate-x-1 transition-transform"></i>
         </button>
+
+        <!-- Mobile Navigation Controls -->
+        <div class="md:hidden fixed bottom-8 left-0 right-0 z-50 flex justify-center space-x-4">
+            <button onclick="$('#flipbook').turn('previous')" class="w-12 h-12 rounded-full bg-white/90 shadow-lg flex items-center justify-center text-gray-700 active:scale-95">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            <button onclick="$('#flipbook').turn('next')" class="w-12 h-12 rounded-full bg-white/90 shadow-lg flex items-center justify-center text-gray-700 active:scale-95">
+                <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
         <!-- The Book Architecture -->
         <div id="book-viewport" class="relative group">
             <!-- Shadow Depth -->
             <div class="absolute inset-0 -bottom-12 bg-black/40 blur-[60px] rounded-[100px] scale-x-90 opacity-40">
             </div>
-
             <div id="flipbook-outer">
                 <!-- Binding/Spine Detail -->
                 <div class="book-spine">
