@@ -111,10 +111,16 @@ $(document).ready(function () {
                 const src = $img.attr('data-src') || $img.attr('src');
                 if (src && !$img.attr('src')) {
                     $img.attr('src', src).removeAttr('data-src');
+                }
 
-                    // Add error handling for failed image loads
-                    $img.on('error', function () {
-                        handleImageError(this, v);
+                // Reliability fix: Ensure opacity is updated even if load event is missed
+                if ($img.prop('complete')) {
+                    $img.css('opacity', '1');
+                } else {
+                    $img.on('load', function () {
+                        $(this).css('opacity', '1');
+                    }).on('error', function () {
+                        handleImageError(this);
                     });
                 }
                 loaded.add(v);
@@ -446,22 +452,18 @@ $(document).ready(function () {
 });
 
 // --- GLOBAL HELPERS ---
-function handleImageError(img, pageNum) {
+function handleImageError(img) {
+    const pdfPage = parseInt(img.dataset.pdfPage, 10);
+    const displayPage = Number.isInteger(pdfPage) ? pdfPage + 1 : 'unknown';
+    const pdfPageUrl = Number.isInteger(pdfPage)
+        ? `${WINDOW_BOOK_DATA.pdf_url}#page=${pdfPage + 1}`
+        : WINDOW_BOOK_DATA.pdf_url;
+
     img.style.opacity = '1';
     img.style.backgroundColor = '#fff3cd';
     const errorDiv = document.createElement('div');
-    errorDiv.style.cssText = 'position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fff3cd; color: #856404; font-size: 14px; z-index: 1000; text-align: center; padding: 20px;';
-
-    // Determine if it's a cover or a numbered page
-    const label = (pageNum === 1) ? 'Front Cover' : `Page ${pageNum - 1}`;
-    const src = img.getAttribute('src') || 'Unknown';
-
-    errorDiv.innerHTML = `
-        <i class="fas fa-exclamation-triangle text-2xl mb-2"></i>
-        <div class="font-bold">Failed to load ${label}</div>
-        <div class="text-[11px] mt-1 opacity-70">URL: ${src}</div>
-        <div class="text-[10px] mt-2 bg-white/50 px-2 py-1 rounded">The PDF page may be blank or corrupted</div>
-    `;
+    errorDiv.style.cssText = 'position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; text-align: center; background: #fff3cd; color: #856404; font-size: 14px; z-index: 5; padding: 16px;';
+    errorDiv.innerHTML = `Failed to load page ${displayPage}<br><small>The image render failed, but the original PDF may still be readable.</small><a href="${pdfPageUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:8px 12px; background:#856404; color:#fff; border-radius:6px; text-decoration:none; font-weight:600;">Open original PDF page</a>`;
     img.parentElement.appendChild(errorDiv);
 }
 

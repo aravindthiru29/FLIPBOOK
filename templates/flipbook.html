@@ -109,7 +109,7 @@
                     <!-- Page 1 (Internal Cover or Table of Contents) -->
                     <div class="page first-internal" data-page="0">
                         <div class="page-texture"></div>
-                        <img src="/api/book/{{ book_data.id }}/page/0" class="w-full h-full object-contain">
+                        <img src="/api/book/{{ book_data.id }}/page/0" data-pdf-page="0" class="w-full h-full object-contain">
                         <div class="annotations-layer absolute inset-0 z-20"></div>
                     </div>
                     <!-- All Remaining PDF Pages -->
@@ -118,9 +118,9 @@
                         <div class="page-texture"></div>
                         <img {% if i < 4 %} src="/api/book/{{ book_data.id }}/page/{{ i }}" {% else %}
                             data-src="/api/book/{{ book_data.id }}/page/{{ i }}" {% endif %}
+                            data-pdf-page="{{ i }}"
                             class="w-full h-full object-contain opacity-0 transition-opacity duration-700" />
-                        <div class="page-number text-[10px] text-gray-400 font-mono absolute bottom-4 right-4">{{ i + 1
-                            }}</div>
+                        <div class="page-number text-[10px] text-gray-400 font-mono absolute bottom-4 right-4">{{ i + 1 }}</div>
                         <div class="annotations-layer absolute inset-0 z-20"></div>
                     </div>
                     {% endfor %}
@@ -160,6 +160,7 @@
     const WINDOW_BOOK_DATA = {
         id: '{{ book_data.id }}',
         page_count: '{{ book_data.page_count }}',
+        pdf_url: '{{ url_for("get_book_pdf", book_id=book_data.id) }}',
         is_admin: '{{ "true" if session.get("is_admin") else "false" }}' === 'true'
     };
 </script>

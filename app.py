@@ -4,11 +4,12 @@ import json
 import uuid
 import threading
 from datetime import datetime
-from flask import Flask, render_template, request, send_from_directory, jsonify, url_for, session, redirect
+from flask import Flask, render_template, request, send_from_directory, send_file, jsonify, url_for, session, redirect
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 app = Flask(__name__)
+# Admin secret key and password
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-123')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 # --- Configuration ---
@@ -353,9 +354,10 @@ def upload_file():
             db.session.add(new_book)
             db.session.commit()
             # Start background pre-rendering
-            thread = threading.Thread(target=pre_render_book, args=(file_path, new_book.id, page_count))
-            thread.daemon = True
-            thread.start()            
+            if not IS_VERCEL:
+                thread = threading.Thread(target=pre_render_book, args=(file_path, new_book.id, page_count))
+                thread.daemon = True
+                thread.start()
             return jsonify({
                 'success': True,
                 'book_id': new_book.id,
@@ -371,6 +373,14 @@ def upload_file():
 def view_book(book_id):
     book = Book.query.get_or_404(book_id)
     return render_template('flipbook.html', book_data=book)
+
+@app.route('/api/book/<int:book_id>/pdf')
+def get_book_pdf(book_id):
+    book = Book.query.get_or_404(book_id)
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], book.filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'PDF file missing'}), 404
+    return send_file(file_path, mimetype='application/pdf', as_attachment=False, download_name=book.title)
 @app.route('/api/book/<int:book_id>/page/<int:page_num>')
 def get_page(book_id, page_num):
     book = Book.query.get_or_404(book_id)
