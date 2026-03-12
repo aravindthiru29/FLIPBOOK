@@ -245,7 +245,26 @@ def pre_render_book(filepath, book_id, page_count):
         return
 
     output_folder = os.path.join(app.config['PAGES_FOLDER'], str(book_id))
-    # ... rest of logic stays same but we add memory check ...
+    print(f"Starting background pre-rendering for book {book_id} in {output_folder}...")
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder, exist_ok=True)
+    
+    rendered_count = 0
+    failed_pages = []
+    
+    for i in range(page_count):
+        # Allow other threads to use the render lock more easily
+        import time
+        time.sleep(0.05)
+        
+        try:
+            render_pdf_page(filepath, i, output_folder)
+            rendered_count += 1
+        except Exception as e:
+            print(f"Background render failed for page {i}: {e}")
+            failed_pages.append(i)
+    
+    print(f"Background pre-rendering complete. Rendered {rendered_count}/{page_count}")
     if failed_pages:
         print(f"Failed pages: {failed_pages}")
 # --- Routes ---
