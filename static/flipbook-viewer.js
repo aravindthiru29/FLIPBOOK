@@ -22,6 +22,7 @@ $(document).ready(function () {
     const PDF_PAGE_COUNT = parseInt(WINDOW_BOOK_DATA.page_count, 10) || 0;
     const BOOK_ID = WINDOW_BOOK_DATA.id;
     const renderedPages = new Set();
+    const quickRenderedPages = new Set();
     const renderingPages = new Map();
     let pdfDocumentPromise = null;
 
@@ -97,14 +98,38 @@ $(document).ready(function () {
         $layer.append($el);
     }
 
-    async function renderPdfPage($pageEl) {
+    function getViewportForPage(page, $pageEl, isQuickRender) {
+        const baseViewport = page.getViewport({ scale: 1 });
+        const containerWidth = $pageEl.innerWidth() || 700;
+        const containerHeight = $pageEl.innerHeight() || 900;
+        const fitScale = Math.min(
+            containerWidth / baseViewport.width,
+            containerHeight / baseViewport.height
+        );
+        const deviceScale = window.devicePixelRatio || 1;
+        const qualityScale = isQuickRender ? 1 : deviceScale;
+        const viewport = page.getViewport({ scale: Math.max(fitScale, 0.1) * qualityScale });
+
+        return { viewport, qualityScale };
+    }
+
+    async function renderPdfPage($pageEl, options = {}) {
         const pageNum = parseInt($pageEl.data('page'), 10);
+        const isQuickRender = options.quick === true;
         if (!Number.isInteger(pageNum) || renderedPages.has(pageNum)) {
             return;
         }
 
-        if (renderingPages.has(pageNum)) {
-            return renderingPages.get(pageNum);
+        const renderKey = `${pageNum}:${isQuickRender ? 'quick' : 'full'}`;
+        if (renderingPages.has(renderKey)) {
+            return renderingPages.get(renderKey);
+        }
+
+        if (isQuickRender && quickRenderedPages.has(pageNum)) {
+            return;
+        }
+        if (!isQuickRender && renderedPages.has(pageNum)) {
+            return;
         }
 
         const renderPromise = (async () => {
@@ -114,34 +139,31 @@ $(document).ready(function () {
             try {
                 const pdf = await getPdfDocument();
                 const page = await pdf.getPage(pageNum + 1);
-                const baseViewport = page.getViewport({ scale: 1 });
-                const containerWidth = $pageEl.innerWidth() || 700;
-                const containerHeight = $pageEl.innerHeight() || 900;
-                const fitScale = Math.min(
-                    containerWidth / baseViewport.width,
-                    containerHeight / baseViewport.height
-                );
-                const deviceScale = window.devicePixelRatio || 1;
-                const viewport = page.getViewport({ scale: Math.max(fitScale, 0.1) * deviceScale });
+                const { viewport, qualityScale } = getViewportForPage(page, $pageEl, isQuickRender);
                 const context = canvas.getContext('2d', { alpha: false });
 
                 canvas.width = Math.floor(viewport.width);
                 canvas.height = Math.floor(viewport.height);
-                canvas.style.width = `${Math.floor(viewport.width / deviceScale)}px`;
-                canvas.style.height = `${Math.floor(viewport.height / deviceScale)}px`;
+                canvas.style.width = `${Math.floor(viewport.width / qualityScale)}px`;
+                canvas.style.height = `${Math.floor(viewport.height / qualityScale)}px`;
 
                 await page.render({ canvasContext: context, viewport }).promise;
                 canvas.style.opacity = '1';
-                renderedPages.add(pageNum);
+                if (isQuickRender) {
+                    quickRenderedPages.add(pageNum);
+                    window.setTimeout(() => renderPdfPage($pageEl, { quick: false }), 50);
+                } else {
+                    renderedPages.add(pageNum);
+                }
             } catch (error) {
                 console.error(`PDF render failed for page ${pageNum + 1}:`, error);
                 handleCanvasError(canvas, pageNum);
             } finally {
-                renderingPages.delete(pageNum);
+                renderingPages.delete(renderKey);
             }
         })();
 
-        renderingPages.set(pageNum, renderPromise);
+        renderingPages.set(renderKey, renderPromise);
         return renderPromise;
     }
 
@@ -151,9 +173,9 @@ $(document).ready(function () {
             const $p = $flipbook.find(`.page[data-page="${v - 2}"]`);
             if ($p.length === 0) return;
 
-            renderPdfPage($p);
-
             const pageNum = $p.data('page');
+            renderPdfPage($p, { quick: pageNum === 0 && !quickRenderedPages.has(pageNum) });
+
             if (pageNum !== undefined) {
                 loadAnnotations(pageNum, $p);
             }
@@ -195,6 +217,7 @@ $(document).ready(function () {
 
     function rerenderVisiblePages() {
         renderedPages.clear();
+        quickRenderedPages.clear();
         $flipbook.find('.pdf-page-canvas').each(function () {
             this.width = 0;
             this.height = 0;
@@ -435,11 +458,13 @@ $(document).ready(function () {
     setTimeout(() => {
         getPdfDocument()
             .then(() => {
-                load($flipbook.turn('view'));
-                preloadAnnotations();
                 const currentView = $flipbook.turn('view');
-                const lastPage = Math.max(...currentView);
-                preloadPages(lastPage);
+                load(currentView);
+                window.setTimeout(preloadAnnotations, 150);
+                window.setTimeout(() => {
+                    const lastPage = Math.max(...currentView);
+                    preloadPages(lastPage);
+                }, 80);
             })
             .catch(error => {
                 console.error('PDF document load failed:', error);
