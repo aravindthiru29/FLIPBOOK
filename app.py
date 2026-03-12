@@ -191,30 +191,44 @@ def get_cached_doc(filepath):
     return doc
 
 def render_pdf_page(filepath, page_num, output_folder):
-    """Render a PDF page to JPG with error handling and fallback rendering"""
+    """Render a PDF page with multiple fallback options for reliability"""
     with render_lock:
         try:
+            if not os.path.exists(filepath):
+                raise FileNotFoundError(f"PDF file not found: {filepath}")
+
             doc = get_cached_doc(filepath)
             page = doc.load_page(page_num)
             filename = f"page_{page_num}.jpg"
             dest_path = os.path.join(output_folder, filename)    
+            
             if not os.path.exists(output_folder):
                 os.makedirs(output_folder, exist_ok=True)    
             
-            # Try with standard scaling (balanced quality and speed)
-            # Use 1.2x for better speed if user reports slowness
-            matrix = fitz.Matrix(1.2, 1.2)
-            pix = page.get_pixmap(matrix=matrix, alpha=False)      
+            # Step 1: Standard quality (1.2x)
+            try:
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2), alpha=False)
+                if pix and pix.n > 0:
+                    pix.save(dest_path, "jpg", quality=80)
+                    return filename
+            except Exception as e1:
+                print(f"Standard render failed for page {page_num}: {e1}")
             
-            # Check if pixmap is valid and not empty
-            if pix.n > 0:
-                pix.save(dest_path, "jpg", quality=80)
-            else:
-                raise ValueError("Generated pixmap is empty")          
-            return filename
+            # Step 2: Fallback quality (1.0x)
+            try:
+                pix = page.get_pixmap(alpha=False)
+                if pix and pix.n > 0:
+                    pix.save(dest_path, "jpg", quality=70)
+                    print(f"Fallback render (1.0x) succeeded for page {page_num}")
+                    return filename
+            except Exception as e2:
+                print(f"Fallback render failing for page {page_num}: {e2}")
+            
+            raise ValueError(f"Could not render page {page_num} - possible memory limit or complex PDF structure.")
+            
         except Exception as e:
-            print(f"Error rendering page {page_num}: {str(e)}")
-            # If doc error, clear cache and retry once
+            print(f"Critical error rendering page {page_num}: {str(e)}")
+            # If it's a document error, clear it from cache so it can be re-opened
             if filepath in doc_cache:
                 try:
                     doc_cache[filepath].close()
@@ -365,34 +379,47 @@ def view_book(book_id):
 @app.route('/api/book/<int:book_id>/page/<int:page_num>')
 def get_page(book_id, page_num):
     book = Book.query.get_or_404(book_id)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], book.filename)
+    file_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], book.filename))
+    
+    # Critical: Check if the source PDF still exists (important for Vercel/Temporary storage)
+    if not os.path.exists(file_path):
+        print(f"CRITICAL: PDF source missing at {file_path}")
+        return jsonify({
+            'error': 'PDF file not found on the server.',
+            'details': 'Uploaded files are only stored temporarily. You may need to delete and re-upload this book.',
+            'is_storage_issue': True
+        }), 404
+
     # Check if page is already rendered
     book_page_folder = os.path.join(app.config['PAGES_FOLDER'], str(book_id))
     page_filename = f"page_{page_num}.jpg"
     page_path = os.path.join(book_page_folder, page_filename)    
+    
     # Validate page number
     if page_num < 0 or page_num >= book.page_count:
         return jsonify({'error': 'Page number out of range'}), 404
+
+    # If the file exists but is 0 bytes, it's a failed previous render - delete it to force a retry
+    if os.path.exists(page_path) and os.path.getsize(page_path) == 0:
+        try:
+            os.remove(page_path)
+        except:
+            pass
+
     if not os.path.exists(page_path):
-        print(f"Rendering page {page_num} for book {book_id}...")
+        print(f"Live rendering page {page_num} for book {book_id}...")
         try:
             render_pdf_page(file_path, page_num, book_page_folder)
-            print(f"Successfully rendered {page_path}")
         except Exception as e:
-            print(f"Error rendering page {page_num}: {str(e)}")
-            # Return a proper error response instead of crashing
             return jsonify({
-                'error': f'Failed to render page {page_num}. The PDF page may be corrupted or empty.',
+                'error': f'Failed to render page {page_num}.',
                 'details': str(e)
             }), 500    
-    # Check if the file actually exists and has content
-    if os.path.exists(page_path):
-        file_size = os.path.getsize(page_path)
-        if file_size > 0:
-            return send_from_directory(book_page_folder, page_filename)
-        else:
-            print(f"Warning: Page file {page_path} is empty (0 bytes)")
-            return jsonify({'error': 'Rendered page is empty. The PDF page may be blank or corrupted.'}), 500
+            
+    # Final check for successfully rendered file
+    if os.path.exists(page_path) and os.path.getsize(page_path) > 0:
+        return send_from_directory(book_page_folder, page_filename)
+        
     return jsonify({'error': f'Could not render page {page_num}'}), 500
 @app.route('/api/book/<int:book_id>/toc')
 def get_toc(book_id):
