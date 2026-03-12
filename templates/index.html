@@ -10,7 +10,7 @@
         <div class="flex items-center gap-4">
             <div class="relative hidden sm:block">
                 <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                <input type="text" placeholder="Search reports..."
+                <input type="text" id="library-search" placeholder="Search reports..."
                     class="bg-white border border-gray-200 rounded-2xl pl-11 pr-6 py-3 text-sm text-gray-700 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 w-72 transition-all shadow-sm">
             </div>
             <button id="upload-trigger"
@@ -268,5 +268,37 @@
         uploadModal.classList.remove('flex');
         uploadModal.classList.add('hidden');
     }
+
+    // Search functionality
+    document.getElementById('library-search').addEventListener('input', function (e) {
+        const term = e.target.value.toLowerCase();
+        const cards = document.querySelectorAll('.grid > div:not(.col-span-full)');
+        let found = false;
+
+        cards.forEach(card => {
+            const title = card.querySelector('h4').innerText.toLowerCase();
+            if (title.includes(term)) {
+                card.style.display = '';
+                found = true;
+            } else {
+                card.style.display = 'none';
+            }
+        });
+
+        // Toggle empty state if no search results
+        const emptyState = document.querySelector('.col-span-full');
+        if (emptyState) {
+            if (!found && term !== '') {
+                emptyState.style.display = 'flex';
+                emptyState.querySelector('h3').innerText = 'No matching documents';
+                emptyState.querySelector('p').innerText = `We couldn't find anything matching "${term}"`;
+            } else if (term === '' && cards.length > 0) {
+                emptyState.style.display = 'none';
+            } else if (cards.length === 0) {
+                emptyState.style.display = 'flex';
+                emptyState.querySelector('h3').innerText = 'No documents found';
+            }
+        }
+    });
 </script>
 {% endblock %}

@@ -160,88 +160,101 @@ class Highlight(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 # --- PDF Utilities ---
 def get_pdf_metadata(filepath):
-    doc = fitz.open(filepath)
-    toc = doc.get_toc()
-    page_count = doc.page_count
-    doc.close()
+    with render_lock:
+        doc = fitz.open(filepath)
+        toc = doc.get_toc()
+        page_count = doc.page_count
+        doc.close()
     return page_count, toc
 # Global lock for PDF operations (PyMuPDF is not thread-safe for concurrent writes)
 render_lock = threading.Lock()
 
+# Document cache to avoid repeated file opening
+doc_cache = {}
+DOC_CACHE_LIMIT = 5
+
+def get_cached_doc(filepath):
+    if filepath in doc_cache:
+        return doc_cache[filepath]
+    
+    if len(doc_cache) >= DOC_CACHE_LIMIT:
+        # Simple cache eviction: remove the first key
+        oldest_key = next(iter(doc_cache))
+        try:
+            doc_cache[oldest_key].close()
+        except:
+            pass
+        del doc_cache[oldest_key]
+    
+    doc = fitz.open(filepath)
+    doc_cache[filepath] = doc
+    return doc
+
 def render_pdf_page(filepath, page_num, output_folder):
     """Render a PDF page to JPG with error handling and fallback rendering"""
-    doc = fitz.open(filepath)
-    page = doc.load_page(page_num)
-    filename = f"page_{page_num}.jpg"
-    dest_path = os.path.join(output_folder, filename)    
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)    
-    try:
-        # Try with standard scaling (balanced quality and speed)
-        pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)      
-        # Check if pixmap is valid and not empty
-        if pix.n > 0:
-            pix.save(dest_path, "jpg", quality=85)
-        else:
-            raise ValueError("Generated pixmap is empty")          
-    except Exception as e:
-        print(f"Warning: High-quality rendering failed for page {page_num}: {str(e)}")
+    with render_lock:
         try:
-            # Fallback: Try with lower scaling
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2), alpha=False)
-            pix.save(dest_path, "jpg", quality=85)
-            print(f"Successfully rendered page {page_num} with fallback scaling")
-        except Exception as e2:
-            print(f"Warning: Fallback rendering failed for page {page_num}: {str(e2)}")
-            try:
-                # Last resort: Try with 1x scaling
-                pix = page.get_pixmap(alpha=False)
-                pix.save(dest_path, "jpg", quality=85)
-                print(f"Successfully rendered page {page_num} with 1x scaling")
-            except Exception as e3:
-                print(f"Error: Could not render page {page_num} with any scaling: {str(e3)}")
-                # Create a blank/error page so it doesn't fail completely
-                pix = page.get_pixmap(alpha=False)
-                pix.save(dest_path, "jpg", quality=85)
-    doc.close()
-    return filename
+            doc = get_cached_doc(filepath)
+            page = doc.load_page(page_num)
+            filename = f"page_{page_num}.jpg"
+            dest_path = os.path.join(output_folder, filename)    
+            if not os.path.exists(output_folder):
+                os.makedirs(output_folder, exist_ok=True)    
+            
+            # Try with standard scaling (balanced quality and speed)
+            # Use 1.2x for better speed if user reports slowness
+            matrix = fitz.Matrix(1.2, 1.2)
+            pix = page.get_pixmap(matrix=matrix, alpha=False)      
+            
+            # Check if pixmap is valid and not empty
+            if pix.n > 0:
+                pix.save(dest_path, "jpg", quality=80)
+            else:
+                raise ValueError("Generated pixmap is empty")          
+            return filename
+        except Exception as e:
+            print(f"Error rendering page {page_num}: {str(e)}")
+            # If doc error, clear cache and retry once
+            if filepath in doc_cache:
+                try:
+                    doc_cache[filepath].close()
+                except:
+                    pass
+                del doc_cache[filepath]
+            raise e
 def pre_render_book(filepath, book_id, page_count):
     """Background task to pre-render all pages with error handling"""
-    # Use config directly, handle absolute paths like /tmp correctly
     output_folder = os.path.join(app.config['PAGES_FOLDER'], str(book_id))
     print(f"Starting background pre-rendering for book {book_id} in {output_folder}...")
     if not os.path.exists(output_folder):
         os.makedirs(output_folder, exist_ok=True)
-    doc = fitz.open(filepath)
+    
     rendered_count = 0
     failed_pages = []
+    
     for i in range(page_count):
         page_filename = f"page_{i}.jpg"
         page_path = os.path.join(output_folder, page_filename)        
         if not os.path.exists(page_path):
             try:
-                page = doc.load_page(i)
-                # Try with standard scaling
-                try:
-                    pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+                with render_lock:
+                    doc = get_cached_doc(filepath)
+                    page = doc.load_page(i)
+                    pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2), alpha=False)
                     if pix.n > 0:
-                        pix.save(page_path, "jpg", quality=85)
+                        pix.save(page_path, "jpg", quality=80)
                         rendered_count += 1
-                        print(f"Pre-rendered page {i} successfully")
                     else:
                         raise ValueError("Empty pixmap")
-                except:
-                    # Fallback to lower quality
-                    pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2), alpha=False)
-                    pix.save(page_path, "jpg")
-                    rendered_count += 1
-                    print(f"Pre-rendered page {i} with fallback quality")
+                # Small sleep to allow other request threads to grab the lock
+                import time
+                time.sleep(0.01)
             except Exception as e:
                 print(f"Error pre-rendering page {i}: {str(e)}")
                 failed_pages.append(i)
         else:
             rendered_count += 1
-    doc.close()
+    
     print(f"Background pre-rendering complete for book {book_id}. Rendered: {rendered_count}/{page_count}")
     if failed_pages:
         print(f"Failed pages: {failed_pages}")
