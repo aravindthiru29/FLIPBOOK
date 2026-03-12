@@ -3,6 +3,7 @@ import fitz  # PyMuPDF
 import json
 import uuid
 import threading
+from io import BytesIO
 from datetime import datetime
 from flask import Flask, render_template, request, send_from_directory, send_file, jsonify, url_for, session, redirect
 from functools import wraps
@@ -164,13 +165,6 @@ class Highlight(db.Model):
     color = db.Column(db.String(50), default='yellow')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 # --- PDF Utilities ---
-def get_pdf_metadata(filepath):
-    with render_lock:
-        doc = fitz.open(filepath)
-        toc = doc.get_toc()
-        page_count = doc.page_count
-        doc.close()
-    return page_count, toc
 # Global lock for PDF operations (PyMuPDF is not thread-safe for concurrent writes)
 render_lock = threading.Lock()
 
@@ -178,6 +172,14 @@ render_lock = threading.Lock()
 doc_cache = {}
 # Drastically reduce cache for Vercel to save memory
 DOC_CACHE_LIMIT = 1 if IS_VERCEL else 3
+
+def get_pdf_metadata(filepath=None, pdf_bytes=None):
+    with render_lock:
+        doc = fitz.open(stream=pdf_bytes, filetype='pdf') if pdf_bytes else fitz.open(filepath)
+        toc = doc.get_toc()
+        page_count = doc.page_count
+        doc.close()
+    return page_count, toc
 
 def ensure_book_pdf_column():
     inspector = inspect(db.engine)
@@ -203,29 +205,27 @@ def ensure_book_pdf_file(book):
 
     return file_path
 
-def get_cached_doc(filepath):
-    if filepath in doc_cache:
+def get_cached_doc(cache_key, filepath=None, pdf_bytes=None):
+    if cache_key in doc_cache:
         try:
-            # Test if the handle is still valid
-            doc_cache[filepath].page_count
-            return doc_cache[filepath]
-        except:
-            if filepath in doc_cache:
-                del doc_cache[filepath]
-    
+            doc_cache[cache_key].page_count
+            return doc_cache[cache_key]
+        except Exception:
+            doc_cache.pop(cache_key, None)
+
     if len(doc_cache) >= DOC_CACHE_LIMIT:
         oldest_key = next(iter(doc_cache))
         try:
             doc_cache[oldest_key].close()
-        except:
+        except Exception:
             pass
         del doc_cache[oldest_key]
-    
-    doc = fitz.open(filepath)
-    doc_cache[filepath] = doc
+
+    doc = fitz.open(stream=pdf_bytes, filetype='pdf') if pdf_bytes else fitz.open(filepath)
+    doc_cache[cache_key] = doc
     return doc
 
-def render_pdf_page(filepath, page_num, output_folder):
+def render_pdf_page(page_num, output_folder, filepath=None, pdf_bytes=None, cache_key=None):
     """Render a PDF page with extreme reliability and fresh-handle retries"""
     with render_lock:
         dest_filename = f"page_{page_num}.jpg"
@@ -236,7 +236,11 @@ def render_pdf_page(filepath, page_num, output_folder):
 
         # Try 1: Use cached document (Fastest)
         try:
-            doc = get_cached_doc(filepath)
+            doc = get_cached_doc(
+                cache_key or filepath or f"bytes:{len(pdf_bytes) if pdf_bytes else 0}",
+                filepath=filepath,
+                pdf_bytes=pdf_bytes
+            )
             page = doc.load_page(page_num)
             # Use lower quality on Vercel for speed/memory
             scale = 1.0 if IS_VERCEL else 1.2
@@ -246,13 +250,12 @@ def render_pdf_page(filepath, page_num, output_folder):
                 return dest_filename
         except Exception as e:
             print(f"Cached render failed for page {page_num}: {e}")
-            if filepath in doc_cache:
-                del doc_cache[filepath]
+            doc_cache.pop(cache_key or filepath or f"bytes:{len(pdf_bytes) if pdf_bytes else 0}", None)
 
         # Try 2: Fresh handle with NO scaling (Safest)
         try:
             print(f"Attempting fresh handle rendering for page {page_num}...")
-            doc = fitz.open(filepath)
+            doc = fitz.open(stream=pdf_bytes, filetype='pdf') if pdf_bytes else fitz.open(filepath)
             page = doc.load_page(page_num)
             pix = page.get_pixmap(alpha=False, colorspace=fitz.csRGB)
             if pix and pix.n > 0:
@@ -287,7 +290,7 @@ def pre_render_book(filepath, book_id, page_count):
         time.sleep(0.05)
         
         try:
-            render_pdf_page(filepath, i, output_folder)
+            render_pdf_page(i, output_folder, filepath=filepath, cache_key=filepath)
             rendered_count += 1
         except Exception as e:
             print(f"Background render failed for page {i}: {e}")
@@ -380,7 +383,7 @@ def upload_file():
             print(f"Uploaded PDF saved to: {file_path}")
             # Get metadata and add print statements
             print(f"Opening PDF for metadata extraction: {file_path}")
-            page_count, toc = get_pdf_metadata(file_path)
+            page_count, toc = get_pdf_metadata(pdf_bytes=file_bytes)
             print(f"PDF opened successfully. Total pages: {page_count}")
             new_book = Book(title=filename, filename=save_name, page_count=page_count, pdf_data=file_bytes)
             db.session.add(new_book)
@@ -409,6 +412,14 @@ def view_book(book_id):
 @app.route('/api/book/<int:book_id>/pdf')
 def get_book_pdf(book_id):
     book = Book.query.get_or_404(book_id)
+    if book.pdf_data:
+        return send_file(
+            BytesIO(book.pdf_data),
+            mimetype='application/pdf',
+            as_attachment=False,
+            download_name=book.title
+        )
+
     file_path = ensure_book_pdf_file(book)
     if not file_path:
         return jsonify({'error': 'PDF file missing'}), 404
@@ -416,7 +427,8 @@ def get_book_pdf(book_id):
 @app.route('/api/book/<int:book_id>/page/<int:page_num>')
 def get_page(book_id, page_num):
     book = Book.query.get_or_404(book_id)
-    file_path = ensure_book_pdf_file(book)
+    pdf_bytes = book.pdf_data
+    file_path = None if pdf_bytes else ensure_book_pdf_file(book)
     
     # Critical: Check if the source PDF still exists (important for Vercel/Temporary storage)
     if not file_path or not os.path.exists(file_path):
@@ -446,7 +458,13 @@ def get_page(book_id, page_num):
     if not os.path.exists(page_path):
         print(f"Live rendering page {page_num} for book {book_id}...")
         try:
-            render_pdf_page(file_path, page_num, book_page_folder)
+            render_pdf_page(
+                page_num,
+                book_page_folder,
+                filepath=file_path,
+                pdf_bytes=pdf_bytes,
+                cache_key=f"book:{book_id}"
+            )
         except Exception as e:
             return jsonify({
                 'error': f'Failed to render page {page_num}.',
@@ -461,6 +479,10 @@ def get_page(book_id, page_num):
 @app.route('/api/book/<int:book_id>/toc')
 def get_toc(book_id):
     book = Book.query.get_or_404(book_id)
+    if book.pdf_data:
+        _, toc = get_pdf_metadata(pdf_bytes=book.pdf_data)
+        return jsonify(toc)
+
     file_path = ensure_book_pdf_file(book)
     if not file_path:
         return jsonify({'error': 'PDF file missing'}), 404
