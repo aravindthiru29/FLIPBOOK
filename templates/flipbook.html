@@ -109,17 +109,15 @@
                     <!-- Page 1 (Internal Cover or Table of Contents) -->
                     <div class="page first-internal" data-page="0">
                         <div class="page-texture"></div>
-                        <img src="/api/book/{{ book_data.id }}/page/0" data-pdf-page="0" class="w-full h-full object-contain">
+                        <canvas data-pdf-page="0" class="pdf-page-canvas w-full h-full object-contain"></canvas>
                         <div class="annotations-layer absolute inset-0 z-20"></div>
                     </div>
                     <!-- All Remaining PDF Pages -->
                     {% for i in range(1, book_data.page_count) %}
                     <div class="page" data-page="{{ i }}">
                         <div class="page-texture"></div>
-                        <img {% if i < 4 %} src="/api/book/{{ book_data.id }}/page/{{ i }}" {% else %}
-                            data-src="/api/book/{{ book_data.id }}/page/{{ i }}" {% endif %}
-                            data-pdf-page="{{ i }}"
-                            class="w-full h-full object-contain opacity-0 transition-opacity duration-700" />
+                        <canvas data-pdf-page="{{ i }}"
+                            class="pdf-page-canvas w-full h-full object-contain opacity-0 transition-opacity duration-700"></canvas>
                         <div class="page-number text-[10px] text-gray-400 font-mono absolute bottom-4 right-4">{{ i + 1 }}</div>
                         <div class="annotations-layer absolute inset-0 z-20"></div>
                     </div>
@@ -155,6 +153,7 @@
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/turn.js/3/turn.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
 <script>
     const WINDOW_BOOK_DATA = {

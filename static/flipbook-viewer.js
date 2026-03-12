@@ -1,9 +1,8 @@
-let currentMode = null; // 'note', 'highlight', or null
+let currentMode = null;
 let currentHighlightColor = 'yellow';
 let allNotes = [];
 let allHighlights = [];
 
-// Play page turn sound effect
 let currentAudioIndex = 0;
 function playPageTurnSound() {
     const audioIds = ['page-turn-sound-1', 'page-turn-sound-2'];
@@ -20,10 +19,23 @@ function playPageTurnSound() {
 $(document).ready(function () {
     const $flipbook = $('#flipbook');
     const $rangeDisplay = $('#current-pages-range');
-    const PDF_PAGE_COUNT = parseInt(WINDOW_BOOK_DATA.page_count) || 0;
+    const PDF_PAGE_COUNT = parseInt(WINDOW_BOOK_DATA.page_count, 10) || 0;
     const BOOK_ID = WINDOW_BOOK_DATA.id;
+    const renderedPages = new Set();
+    const renderingPages = new Map();
+    let pdfDocumentPromise = null;
 
-    // --- PRELOAD DATA ---
+    if (window.pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    function getPdfDocument() {
+        if (!pdfDocumentPromise) {
+            pdfDocumentPromise = pdfjsLib.getDocument(WINDOW_BOOK_DATA.pdf_url).promise;
+        }
+        return pdfDocumentPromise;
+    }
+
     function preloadAnnotations() {
         Promise.all([
             fetch(`/api/book/${BOOK_ID}/notes`).then(r => r.json()),
@@ -31,7 +43,6 @@ $(document).ready(function () {
         ]).then(([notes, highlights]) => {
             allNotes = Array.isArray(notes) ? notes : [];
             allHighlights = Array.isArray(highlights) ? highlights : [];
-            // Reload current view to show initial annotations
             const currentView = $flipbook.turn('view');
             load(currentView);
         }).catch(err => {
@@ -41,12 +52,9 @@ $(document).ready(function () {
         });
     }
 
-    // --- ANNOTATION HELPERS ---
     function loadAnnotations(pageNum, $pageEl) {
-        // Clear old annotations to avoid duplicates
         $pageEl.find('.note-marker, .highlight-marker').remove();
 
-        // Render from cache
         allNotes.filter(n => n.page_number == pageNum).forEach(n => {
             renderNote(n, $pageEl);
         });
@@ -89,44 +97,62 @@ $(document).ready(function () {
         $layer.append($el);
     }
 
-    let loaded = new Set();
+    async function renderPdfPage($pageEl) {
+        const pageNum = parseInt($pageEl.data('page'), 10);
+        if (!Number.isInteger(pageNum) || renderedPages.has(pageNum)) {
+            return;
+        }
+
+        if (renderingPages.has(pageNum)) {
+            return renderingPages.get(pageNum);
+        }
+
+        const renderPromise = (async () => {
+            const canvas = $pageEl.find('.pdf-page-canvas').get(0);
+            if (!canvas) return;
+
+            try {
+                const pdf = await getPdfDocument();
+                const page = await pdf.getPage(pageNum + 1);
+                const baseViewport = page.getViewport({ scale: 1 });
+                const containerWidth = $pageEl.innerWidth() || 700;
+                const containerHeight = $pageEl.innerHeight() || 900;
+                const fitScale = Math.min(
+                    containerWidth / baseViewport.width,
+                    containerHeight / baseViewport.height
+                );
+                const deviceScale = window.devicePixelRatio || 1;
+                const viewport = page.getViewport({ scale: Math.max(fitScale, 0.1) * deviceScale });
+                const context = canvas.getContext('2d', { alpha: false });
+
+                canvas.width = Math.floor(viewport.width);
+                canvas.height = Math.floor(viewport.height);
+                canvas.style.width = `${Math.floor(viewport.width / deviceScale)}px`;
+                canvas.style.height = `${Math.floor(viewport.height / deviceScale)}px`;
+
+                await page.render({ canvasContext: context, viewport }).promise;
+                canvas.style.opacity = '1';
+                renderedPages.add(pageNum);
+            } catch (error) {
+                console.error(`PDF render failed for page ${pageNum + 1}:`, error);
+                handleCanvasError(canvas, pageNum);
+            } finally {
+                renderingPages.delete(pageNum);
+            }
+        })();
+
+        renderingPages.set(pageNum, renderPromise);
+        return renderPromise;
+    }
+
     function load(view) {
         view.forEach(v => {
             if (v <= 0) return;
-            // The .page elements are 0-indexed in jQuery collection
-            // Page 1 is Front Cover (no data-page), Page 2 is PDF Page 0 (data-page="0")
             const $p = $flipbook.find(`.page[data-page="${v - 2}"]`);
             if ($p.length === 0) return;
-            // Image Lazy Load with error handling
-            const $img = $p.find('img');
-            if ($img.length && !loaded.has(v)) {
-                if ($img.prop('complete')) {
-                    $img.css('opacity', 1);
-                } else {
-                    $img.on('load', function () {
-                        $(this).css('opacity', 1);
-                    });
-                }
 
-                const src = $img.attr('data-src') || $img.attr('src');
-                if (src && !$img.attr('src')) {
-                    $img.attr('src', src).removeAttr('data-src');
-                }
+            renderPdfPage($p);
 
-                // Reliability fix: Ensure opacity is updated even if load event is missed
-                if ($img.prop('complete')) {
-                    $img.css('opacity', '1');
-                } else {
-                    $img.on('load', function () {
-                        $(this).css('opacity', '1');
-                    }).on('error', function () {
-                        handleImageError(this);
-                    });
-                }
-                loaded.add(v);
-            }
-
-            // Load annotations for this page
             const pageNum = $p.data('page');
             if (pageNum !== undefined) {
                 loadAnnotations(pageNum, $p);
@@ -134,35 +160,15 @@ $(document).ready(function () {
         });
     }
 
-    // Debounced load function to prevent request flooding
     const debouncedLoad = _.debounce(function (view) {
         load(view);
-    }, 150);
-
-    // Function to show images that were loaded via HTML src
-    function showInitialImages() {
-        $flipbook.find('.page img[src]').each(function () {
-            const $img = $(this);
-            if ($img.prop('complete')) {
-                $img.css('opacity', '1');
-            } else {
-                $img.on('load', function () {
-                    $(this).css('opacity', '1');
-                }).on('error', function () {
-                    const $p = $(this).closest('.page');
-                    const v = parseInt($p.data('page')) + 2;
-                    handleImageError(this, v);
-                });
-            }
-        });
-    }
+    }, 100);
 
     function preloadPages(currentPage) {
-        // Preload next 3 spreads (6 pages)
         const pagesToPreload = [];
         for (let i = 1; i <= 6; i++) {
             const nextP = currentPage + i;
-            if (nextP <= PDF_PAGE_COUNT + 2) { // +2 for covers
+            if (nextP <= PDF_PAGE_COUNT + 2) {
                 pagesToPreload.push(nextP);
             }
         }
@@ -171,23 +177,34 @@ $(document).ready(function () {
         }
     }
 
-    // --- RESPONSIVE HELPERS ---
     function getBookSize() {
         const width = window.innerWidth;
         const height = window.innerHeight;
         const isMobile = width < 768;
 
         if (isMobile) {
-            // Mobile: Single page, aspect ratio roughly same as portrait page
             const w = width * 0.95;
-            const h = height * 0.7; // 70% of viewport height
+            const h = height * 0.7;
             return { width: w, height: h, display: 'single' };
-        } else {
-            // Desktop: Double page (1000x700 default)
-            const w = Math.min(1000, width * 0.9);
-            const h = (w / 1000) * 700;
-            return { width: w, height: h, display: 'double' };
         }
+
+        const w = Math.min(1000, width * 0.9);
+        const h = (w / 1000) * 700;
+        return { width: w, height: h, display: 'double' };
+    }
+
+    function rerenderVisiblePages() {
+        renderedPages.clear();
+        $flipbook.find('.pdf-page-canvas').each(function () {
+            this.width = 0;
+            this.height = 0;
+            this.style.opacity = '0';
+            const existingError = this.parentElement.querySelector('.pdf-error-overlay');
+            if (existingError) {
+                existingError.remove();
+            }
+        });
+        load($flipbook.turn('view'));
     }
 
     function resizeFlipbook() {
@@ -195,10 +212,10 @@ $(document).ready(function () {
         if ($flipbook.turn('is')) {
             $flipbook.turn('size', size.width, size.height);
             $flipbook.turn('display', size.display);
+            rerenderVisiblePages();
         }
     }
 
-    // Initialize Flipbook
     const initialSize = getBookSize();
     try {
         $flipbook.turn({
@@ -212,34 +229,29 @@ $(document).ready(function () {
             when: {
                 turning: function (e, page, view) {
                     debouncedLoad(view);
-                    // Play page turn sound effect immediately when turning starts
                     playPageTurnSound();
                 },
                 turned: function (e, page, view) {
                     let pdfPages = view.map(v => v - 2).filter(v => v >= 0 && v < PDF_PAGE_COUNT);
-                    let displayTxt = "Cover";
+                    let displayTxt = 'Cover';
                     if (pdfPages.length > 0) {
                         displayTxt = pdfPages.length > 1 ? `${pdfPages[0] + 1} - ${pdfPages[1] + 1}` : `${pdfPages[0] + 1}`;
                     } else if (view.includes($flipbook.turn('pages'))) {
-                        displayTxt = "End";
+                        displayTxt = 'End';
                     }
                     $rangeDisplay.text(displayTxt);
-
-                    // Preload next pages for smoother experience
                     preloadPages(page);
                 }
             }
         });
     } catch (e) {
-        console.error("Turn.js error:", e);
+        console.error('Turn.js error:', e);
     }
 
-    // Resize listener
     $(window).resize(_.debounce(resizeFlipbook, 150));
 
-    // Controls
-    $('#prev-btn').click(() => $flipbook.turn("previous"));
-    $('#next-btn').click(() => $flipbook.turn("next"));
+    $('#prev-btn').click(() => $flipbook.turn('previous'));
+    $('#next-btn').click(() => $flipbook.turn('next'));
 
     $(window).bind('keydown', function (e) {
         if (e.keyCode === 37) $flipbook.turn('previous');
@@ -251,12 +263,10 @@ $(document).ready(function () {
         else document.exitFullscreen();
     });
 
-    // Swipe and Mouse Drag Support
     let startX = 0;
     let isDown = false;
 
     $flipbook.on('touchstart mousedown', (e) => {
-        // Ignore if clicking on interactive elements or if in annotation mode
         if ($(e.target).closest('button, .note-marker, .highlight-marker, a, .delete-annotation').length) return;
         if (currentMode) return;
 
@@ -268,7 +278,6 @@ $(document).ready(function () {
         if (!isDown) return;
         isDown = false;
 
-        // Handle both touch and mouse events
         let endX;
         if (e.type === 'touchend') {
             endX = e.originalEvent.changedTouches[0].clientX;
@@ -276,12 +285,10 @@ $(document).ready(function () {
             endX = e.pageX;
         }
 
-        // Drag threshold
-        if (startX - endX > 100) $flipbook.turn('next');      // Drag Left -> Next
-        if (endX - startX > 100) $flipbook.turn('previous');  // Drag Right -> Previous
+        if (startX - endX > 100) $flipbook.turn('next');
+        if (endX - startX > 100) $flipbook.turn('previous');
     });
 
-    // --- INTERACTION ---
     let highlightStart = null;
     let $highlightPreview = null;
 
@@ -291,14 +298,12 @@ $(document).ready(function () {
         const $layer = $(this);
         const $page = $layer.closest('.page');
         const pageNum = $page.data('page');
-
-        // Calculate % position relative to layer size
         const offset = $layer.offset();
         const x = ((e.pageX - offset.left) / $layer.width()) * 100;
         const y = ((e.pageY - offset.top) / $layer.height()) * 100;
 
         if (currentMode === 'note') {
-            const content = prompt("Enter note content:");
+            const content = prompt('Enter note content:');
             if (content) {
                 fetch(`/api/book/${BOOK_ID}/notes`, {
                     method: 'POST',
@@ -324,7 +329,6 @@ $(document).ready(function () {
         }
     });
 
-    // Swipe Highlighter
     $(document).on('mousedown touchstart', '.annotations-layer', function (e) {
         if (currentMode !== 'highlight') return;
         if ($(e.target).closest('.delete-annotation').length) return;
@@ -335,7 +339,6 @@ $(document).ready(function () {
         const pageNum = $page.data('page');
         const offset = $layer.offset();
 
-        // Get starting position
         const startClientX = e.type.includes('touch') ? e.originalEvent.touches[0].clientX : e.clientX;
         const startClientY = e.type.includes('touch') ? e.originalEvent.touches[0].clientY : e.clientY;
         const startX = startClientX - offset.left;
@@ -343,7 +346,6 @@ $(document).ready(function () {
 
         highlightStart = { x: startX, y: startY, pageNum, $page, $layer, offset };
 
-        // Create preview element with dynamic color
         const colorStyles = {
             yellow: { bg: 'rgba(255, 255, 0, 0.4)', border: 'rgba(255, 165, 0, 0.8)' },
             green: { bg: 'rgba(34, 197, 94, 0.4)', border: 'rgba(34, 197, 94, 0.8)' },
@@ -363,13 +365,10 @@ $(document).ready(function () {
         const currentX = currentClientX - highlightStart.offset.left;
         const currentY = currentClientY - highlightStart.offset.top;
 
-        const startX = highlightStart.x;
-        const startY = highlightStart.y;
-
-        const left = Math.min(startX, currentX);
-        const top = Math.min(startY, currentY);
-        const width = Math.abs(currentX - startX);
-        const height = Math.abs(currentY - startY);
+        const left = Math.min(highlightStart.x, currentX);
+        const top = Math.min(highlightStart.y, currentY);
+        const width = Math.abs(currentX - highlightStart.x);
+        const height = Math.abs(currentY - highlightStart.y);
 
         $highlightPreview.css({
             left: left + 'px',
@@ -392,17 +391,12 @@ $(document).ready(function () {
         const endX = endClientX - offset.left;
         const endY = endClientY - offset.top;
 
-        const startX = highlightStart.x;
-        const startY = highlightStart.y;
+        if (Math.abs(endX - highlightStart.x) > 10 || Math.abs(endY - highlightStart.y) > 10) {
+            const left = Math.min(highlightStart.x, endX);
+            const top = Math.min(highlightStart.y, endY);
+            const width = Math.abs(endX - highlightStart.x);
+            const height = Math.abs(endY - highlightStart.y);
 
-        // Only create highlight if there's meaningful swiping
-        if (Math.abs(endX - startX) > 10 || Math.abs(endY - startY) > 10) {
-            const left = Math.min(startX, endX);
-            const top = Math.min(startY, endY);
-            const width = Math.abs(endX - startX);
-            const height = Math.abs(endY - startY);
-
-            // Convert to % coordinates
             const x = (left / $layer.width()) * 100;
             const y = (top / $layer.height()) * 100;
             const w = (width / $layer.width()) * 100;
@@ -433,38 +427,43 @@ $(document).ready(function () {
                 });
         }
 
-        // Clean up
         $highlightPreview.remove();
         highlightStart = null;
         $highlightPreview = null;
     });
 
-    // Initial load
     setTimeout(() => {
-        showInitialImages();
-        load($flipbook.turn("view"));
-        preloadAnnotations();
-        // Preload next spread automatically
-        const currentView = $flipbook.turn("view");
-        const lastPage = Math.max(...currentView);
-        preloadPages(lastPage);
+        getPdfDocument()
+            .then(() => {
+                load($flipbook.turn('view'));
+                preloadAnnotations();
+                const currentView = $flipbook.turn('view');
+                const lastPage = Math.max(...currentView);
+                preloadPages(lastPage);
+            })
+            .catch(error => {
+                console.error('PDF document load failed:', error);
+                $flipbook.find('.page[data-page]').each(function () {
+                    const pageNum = parseInt($(this).data('page'), 10);
+                    const canvas = $(this).find('.pdf-page-canvas').get(0);
+                    handleCanvasError(canvas, pageNum);
+                });
+            });
     }, 300);
 });
 
-// --- GLOBAL HELPERS ---
-function handleImageError(img) {
-    const pdfPage = parseInt(img.dataset.pdfPage, 10);
-    const displayPage = Number.isInteger(pdfPage) ? pdfPage + 1 : 'unknown';
-    const pdfPageUrl = Number.isInteger(pdfPage)
-        ? `${WINDOW_BOOK_DATA.pdf_url}#page=${pdfPage + 1}`
-        : WINDOW_BOOK_DATA.pdf_url;
+function handleCanvasError(canvas, pageNum) {
+    if (!canvas || !canvas.parentElement) return;
+    canvas.style.opacity = '1';
+    const existing = canvas.parentElement.querySelector('.pdf-error-overlay');
+    if (existing) return;
 
-    img.style.opacity = '1';
-    img.style.backgroundColor = '#fff3cd';
+    const pdfPageUrl = `${WINDOW_BOOK_DATA.pdf_url}#page=${pageNum + 1}`;
     const errorDiv = document.createElement('div');
+    errorDiv.className = 'pdf-error-overlay';
     errorDiv.style.cssText = 'position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; text-align: center; background: #fff3cd; color: #856404; font-size: 14px; z-index: 5; padding: 16px;';
-    errorDiv.innerHTML = `Failed to load page ${displayPage}<br><small>The image render failed, but the original PDF may still be readable.</small><a href="${pdfPageUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:8px 12px; background:#856404; color:#fff; border-radius:6px; text-decoration:none; font-weight:600;">Open original PDF page</a>`;
-    img.parentElement.appendChild(errorDiv);
+    errorDiv.innerHTML = `Failed to render page ${pageNum + 1}<br><small>The browser could not draw this PDF page.</small><a href="${pdfPageUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block; padding:8px 12px; background:#856404; color:#fff; border-radius:6px; text-decoration:none; font-weight:600;">Open original PDF page</a>`;
+    canvas.parentElement.appendChild(errorDiv);
 }
 
 function toggleMode(mode) {
@@ -474,14 +473,12 @@ function toggleMode(mode) {
 
 function setHighlightColor(color) {
     currentHighlightColor = color;
-    // Update button styling
     $('#color-yellow, #color-green, #color-pink, #color-blue').removeClass('ring-2 ring-offset-2 ring-gray-700');
     $(`#color-${color}`).addClass('ring-2 ring-offset-2 ring-gray-700');
 }
 
 function setMode(mode) {
     currentMode = mode;
-    // UI Reset
     $('#note-mode-btn').removeClass('text-yellow-600 bg-yellow-100');
     $('#highlight-mode-btn').removeClass('text-yellow-600 bg-yellow-100');
     $('#color-picker').hide();
@@ -499,7 +496,7 @@ function setMode(mode) {
 }
 
 function deleteNote(id, el) {
-    if (!confirm("Delete this note?")) return;
+    if (!confirm('Delete this note?')) return;
     fetch(`/api/note/${id}`, { method: 'DELETE' })
         .then(r => r.json())
         .then(d => {
@@ -517,7 +514,7 @@ function deleteNote(id, el) {
 }
 
 function deleteHighlight(id, el) {
-    if (!confirm("Remove highlight?")) return;
+    if (!confirm('Remove highlight?')) return;
     fetch(`/api/highlight/${id}`, { method: 'DELETE' })
         .then(r => r.json())
         .then(d => {
