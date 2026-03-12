@@ -8,6 +8,7 @@ from flask import Flask, render_template, request, send_from_directory, send_fil
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
+from sqlalchemy import inspect, text
 app = Flask(__name__)
 # Admin secret key and password
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-123')
@@ -84,6 +85,7 @@ def init_db():
             connection.close()
             # Create tables
             db.create_all()
+            ensure_book_pdf_column()
             print("✓ Database tables created/verified")
             if not os.path.exists(app.config['UPLOAD_FOLDER']):
                 os.makedirs(app.config['UPLOAD_FOLDER'])
@@ -112,6 +114,7 @@ def before_request():
                 connection.close()
                 # Create tables
                 db.create_all()
+                ensure_book_pdf_column()
                 print("✓ Database tables created/verified")
                 if not os.path.exists(app.config['UPLOAD_FOLDER']):
                     os.makedirs(app.config['UPLOAD_FOLDER'])
@@ -141,6 +144,7 @@ class Book(db.Model):
     title = db.Column(db.String(255), nullable=False)
     filename = db.Column(db.String(255), nullable=False)
     page_count = db.Column(db.Integer)
+    pdf_data = db.Column(db.LargeBinary)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     notes = db.relationship('Note', backref='book', lazy=True, cascade="all, delete-orphan")
     highlights = db.relationship('Highlight', backref='book', lazy=True, cascade="all, delete-orphan")
@@ -174,6 +178,30 @@ render_lock = threading.Lock()
 doc_cache = {}
 # Drastically reduce cache for Vercel to save memory
 DOC_CACHE_LIMIT = 1 if IS_VERCEL else 3
+
+def ensure_book_pdf_column():
+    inspector = inspect(db.engine)
+    columns = {column['name'] for column in inspector.get_columns('book')}
+    if 'pdf_data' in columns:
+        return
+
+    column_type = 'BYTEA' if db.engine.dialect.name == 'postgresql' else 'BLOB'
+    with db.engine.begin() as connection:
+        connection.execute(text(f'ALTER TABLE book ADD COLUMN pdf_data {column_type}'))
+
+def ensure_book_pdf_file(book):
+    file_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], book.filename))
+    if os.path.exists(file_path):
+        return file_path
+
+    if not book.pdf_data:
+        return None
+
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, 'wb') as pdf_file:
+        pdf_file.write(book.pdf_data)
+
+    return file_path
 
 def get_cached_doc(filepath):
     if filepath in doc_cache:
@@ -338,19 +366,23 @@ def upload_file():
             # Ensure upload folder exists
             if not os.path.exists(app.config['UPLOAD_FOLDER']):
                 os.makedirs(app.config['UPLOAD_FOLDER'])
+            file_bytes = file.read()
+            if not file_bytes:
+                return jsonify({'error': 'Uploaded file is empty'}), 400
             filename = secure_filename(file.filename)
             # Unique folder for each book to avoid collisions
             unique_id = str(uuid.uuid4())[:8]
             save_name = f"{unique_id}_{filename}"
             # Ensure absolute path for saving the uploaded PDF
             file_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], save_name))
-            file.save(file_path)
+            with open(file_path, 'wb') as saved_file:
+                saved_file.write(file_bytes)
             print(f"Uploaded PDF saved to: {file_path}")
             # Get metadata and add print statements
             print(f"Opening PDF for metadata extraction: {file_path}")
             page_count, toc = get_pdf_metadata(file_path)
             print(f"PDF opened successfully. Total pages: {page_count}")
-            new_book = Book(title=filename, filename=save_name, page_count=page_count)
+            new_book = Book(title=filename, filename=save_name, page_count=page_count, pdf_data=file_bytes)
             db.session.add(new_book)
             db.session.commit()
             # Start background pre-rendering
@@ -377,21 +409,21 @@ def view_book(book_id):
 @app.route('/api/book/<int:book_id>/pdf')
 def get_book_pdf(book_id):
     book = Book.query.get_or_404(book_id)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], book.filename)
-    if not os.path.exists(file_path):
+    file_path = ensure_book_pdf_file(book)
+    if not file_path:
         return jsonify({'error': 'PDF file missing'}), 404
     return send_file(file_path, mimetype='application/pdf', as_attachment=False, download_name=book.title)
 @app.route('/api/book/<int:book_id>/page/<int:page_num>')
 def get_page(book_id, page_num):
     book = Book.query.get_or_404(book_id)
-    file_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], book.filename))
+    file_path = ensure_book_pdf_file(book)
     
     # Critical: Check if the source PDF still exists (important for Vercel/Temporary storage)
-    if not os.path.exists(file_path):
+    if not file_path or not os.path.exists(file_path):
         print(f"CRITICAL: PDF source missing at {file_path}")
         return jsonify({
             'error': 'PDF file not found on the server.',
-            'details': 'Uploaded files are only stored temporarily. You may need to delete and re-upload this book.',
+            'details': 'The original upload is not available in persistent storage. Re-upload this book to restore it.',
             'is_storage_issue': True
         }), 404
 
@@ -429,7 +461,9 @@ def get_page(book_id, page_num):
 @app.route('/api/book/<int:book_id>/toc')
 def get_toc(book_id):
     book = Book.query.get_or_404(book_id)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], book.filename)
+    file_path = ensure_book_pdf_file(book)
+    if not file_path:
+        return jsonify({'error': 'PDF file missing'}), 404
     _, toc = get_pdf_metadata(file_path)
     return jsonify(toc)
 # Notes API
