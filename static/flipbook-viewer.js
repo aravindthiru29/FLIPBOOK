@@ -64,6 +64,15 @@ $(document).ready(function () {
         });
     }
 
+    function clearAnnotationSelection() {
+        $('.note-marker, .highlight-marker').removeClass('annotation-selected');
+    }
+
+    function selectAnnotation($el) {
+        clearAnnotationSelection();
+        $el.addClass('annotation-selected');
+    }
+
     function renderNote(note, $container) {
         const $layer = $container.find('.annotations-layer');
         const $el = $(`
@@ -77,10 +86,12 @@ $(document).ready(function () {
         `);
         $el.click((e) => {
             if (currentMode) return;
+            selectAnnotation($el);
             alert(`Note: ${note.content}`);
             e.stopPropagation();
         });
         $layer.append($el);
+        return $el;
     }
 
     function renderHighlight(hl, $container) {
@@ -95,7 +106,13 @@ $(document).ready(function () {
                 </div>` : ''}
             </div>
         `);
+        $el.on('click touchstart', function (e) {
+            if (currentMode) return;
+            selectAnnotation($el);
+            e.stopPropagation();
+        });
         $layer.append($el);
+        return $el;
     }
 
     function getViewportForPage(page, $pageEl, isQuickRender) {
@@ -338,7 +355,8 @@ $(document).ready(function () {
                         if (d.success) {
                             const newNote = { id: d.id, page_number: pageNum, content, x, y };
                             allNotes.push(newNote);
-                            renderNote(newNote, $page);
+                            const $noteEl = renderNote(newNote, $page);
+                            selectAnnotation($noteEl);
                         } else {
                             alert('Error: ' + (d.error || 'Failed to create note'));
                         }
@@ -439,7 +457,8 @@ $(document).ready(function () {
                     if (d.success) {
                         const newHighlight = { id: d.id, page_number: pageNum, coordinates: { x, y, w, h }, color: currentHighlightColor };
                         allHighlights.push(newHighlight);
-                        renderHighlight(newHighlight, $page);
+                        const $highlightEl = renderHighlight(newHighlight, $page);
+                        selectAnnotation($highlightEl);
                     } else {
                         alert('Error: ' + (d.error || 'Failed to create highlight'));
                     }
@@ -475,6 +494,11 @@ $(document).ready(function () {
                 });
             });
     }, 300);
+
+    $(document).on('click touchstart', function (e) {
+        if ($(e.target).closest('.note-marker, .highlight-marker, .delete-annotation').length) return;
+        clearAnnotationSelection();
+    });
 });
 
 function handleCanvasError(canvas, pageNum) {
