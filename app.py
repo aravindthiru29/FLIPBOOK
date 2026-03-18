@@ -1,19 +1,22 @@
 import os
 import fitz  # PyMuPDF
-import json
 import uuid
 import threading
+import secrets
 from io import BytesIO
 from datetime import datetime
-from flask import Flask, render_template, request, send_from_directory, send_file, jsonify, url_for, session, redirect
+from flask import Flask, render_template, request, send_from_directory, send_file, jsonify, url_for, session, redirect, abort
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import inspect, text
 app = Flask(__name__)
 # Admin secret key and password
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-123')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # --- Configuration ---
 database_url = os.environ.get('POSTGRES_URL')
 if database_url:
@@ -49,6 +52,7 @@ else:
 
 # --- Vercel Compatibility ---
 IS_VERCEL = os.environ.get('VERCEL') == '1'
+app.config['SESSION_COOKIE_SECURE'] = IS_VERCEL or os.environ.get('FLASK_ENV') == 'production'
 
 # --- Paths & Directories ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -87,6 +91,7 @@ def init_db():
             # Create tables
             db.create_all()
             ensure_book_pdf_column()
+            ensure_book_owner_column()
             print("✓ Database tables created/verified")
             if not os.path.exists(app.config['UPLOAD_FOLDER']):
                 os.makedirs(app.config['UPLOAD_FOLDER'])
@@ -116,6 +121,7 @@ def before_request():
                 # Create tables
                 db.create_all()
                 ensure_book_pdf_column()
+                ensure_book_owner_column()
                 print("✓ Database tables created/verified")
                 if not os.path.exists(app.config['UPLOAD_FOLDER']):
                     os.makedirs(app.config['UPLOAD_FOLDER'])
@@ -133,22 +139,41 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get('is_admin'):
-            if request.is_json:
+            if request.is_json or request.path.startswith('/api/'):
                 return jsonify({'error': 'Admin access required'}), 403
             return redirect(url_for('admin_login'))
         return f(*args, **kwargs)
     return decorated_function
 
 # --- Models ---
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    books = db.relationship('Book', backref='owner', lazy=True)
+
 class Book(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(255), nullable=False)
     filename = db.Column(db.String(255), nullable=False)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     page_count = db.Column(db.Integer)
     pdf_data = db.Column(db.LargeBinary)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     notes = db.relationship('Note', backref='book', lazy=True, cascade="all, delete-orphan")
     highlights = db.relationship('Highlight', backref='book', lazy=True, cascade="all, delete-orphan")
+
+class ShareToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    book_id = db.Column(db.Integer, db.ForeignKey('book.id'), nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    book = db.relationship('Book', backref='share_tokens')
+    created_by = db.relationship('User')
+
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     book_id = db.Column(db.Integer, db.ForeignKey('book.id'), nullable=False)
@@ -164,6 +189,56 @@ class Highlight(db.Model):
     coordinates = db.Column(db.JSON, nullable=False)  # JSON list of rects
     color = db.Column(db.String(50), default='yellow')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+def get_current_user():
+    user_id = session.get('user_id')
+    if not user_id:
+        return None
+    return db.session.get(User, user_id)
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not get_current_user() and not session.get('is_admin'):
+            if request.path.startswith('/api/') or request.path == '/upload':
+                return jsonify({'error': 'Login required'}), 401
+            return redirect(url_for('login', next=request.path))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def grant_shared_book_access(book_id):
+    shared_ids = set(session.get('shared_book_ids', []))
+    shared_ids.add(int(book_id))
+    session['shared_book_ids'] = sorted(shared_ids)
+    session.modified = True
+
+def get_shared_book_ids():
+    shared_ids = session.get('shared_book_ids', [])
+    valid_ids = []
+    for value in shared_ids:
+        try:
+            valid_ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return valid_ids
+
+def can_access_book(book):
+    current_user = get_current_user()
+    if session.get('is_admin'):
+        return True
+    if current_user and book.owner_id == current_user.id:
+        return True
+    return book.id in get_shared_book_ids()
+
+def require_book_access(book):
+    if not can_access_book(book):
+        abort(403)
+
+def can_manage_book(book):
+    current_user = get_current_user()
+    if session.get('is_admin'):
+        return True
+    return bool(current_user and book.owner_id == current_user.id)
 # --- PDF Utilities ---
 # Global lock for PDF operations (PyMuPDF is not thread-safe for concurrent writes)
 render_lock = threading.Lock()
@@ -190,6 +265,15 @@ def ensure_book_pdf_column():
     column_type = 'BYTEA' if db.engine.dialect.name == 'postgresql' else 'BLOB'
     with db.engine.begin() as connection:
         connection.execute(text(f'ALTER TABLE book ADD COLUMN pdf_data {column_type}'))
+
+def ensure_book_owner_column():
+    inspector = inspect(db.engine)
+    columns = {column['name'] for column in inspector.get_columns('book')}
+    if 'owner_id' in columns:
+        return
+
+    with db.engine.begin() as connection:
+        connection.execute(text('ALTER TABLE book ADD COLUMN owner_id INTEGER'))
 
 def ensure_book_pdf_file(book):
     file_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], book.filename))
@@ -331,11 +415,69 @@ def health_check():
 @app.route('/')
 def index():
     try:
-        books = Book.query.order_by(Book.created_at.desc()).all()
-        return render_template('index.html', books=books)
+        current_user = get_current_user()
+        if session.get('is_admin'):
+            books = Book.query.order_by(Book.created_at.desc()).all()
+        elif current_user:
+            books = Book.query.filter_by(owner_id=current_user.id).order_by(Book.created_at.desc()).all()
+        else:
+            books = []
+        return render_template('index.html', books=books, current_user=current_user)
     except Exception as e:
         print(f"Index error: {str(e)}")
         return jsonify({'error': 'Database connection failed'}), 503
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if session.get('is_admin') or get_current_user():
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        username = (request.form.get('username') or '').strip()
+        password = request.form.get('password') or ''
+        confirm_password = request.form.get('confirm_password') or ''
+
+        if len(username) < 3:
+            return render_template('register.html', error='Username must be at least 3 characters long.')
+        if len(password) < 6:
+            return render_template('register.html', error='Password must be at least 6 characters long.')
+        if password != confirm_password:
+            return render_template('register.html', error='Passwords do not match.')
+        if User.query.filter_by(username=username).first():
+            return render_template('register.html', error='That username is already taken.')
+
+        user = User(username=username, password_hash=generate_password_hash(password))
+        db.session.add(user)
+        db.session.commit()
+        session['user_id'] = user.id
+        return redirect(url_for('index'))
+
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if session.get('is_admin') or get_current_user():
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        username = (request.form.get('username') or '').strip()
+        password = request.form.get('password') or ''
+        user = User.query.filter_by(username=username).first()
+
+        if user and check_password_hash(user.password_hash, password):
+            session['user_id'] = user.id
+            next_url = request.args.get('next') or request.form.get('next')
+            return redirect(next_url or url_for('index'))
+
+        return render_template('login.html', error='Invalid username or password.', next_url=request.args.get('next'))
+
+    return render_template('login.html', next_url=request.args.get('next'))
+
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    session.pop('shared_book_ids', None)
+    return redirect(url_for('index'))
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
@@ -343,6 +485,7 @@ def admin_login():
         password = request.form.get('password')
         if password == ADMIN_PASSWORD:
             session['is_admin'] = True
+            session.pop('user_id', None)
             return redirect(url_for('admin_dashboard'))
         return render_template('admin_login.html', error="Invalid password")
     return render_template('admin_login.html')
@@ -357,7 +500,9 @@ def admin_logout():
 def admin_dashboard():
     books = Book.query.order_by(Book.created_at.desc()).all()
     return render_template('admin_dashboard.html', books=books)
+
 @app.route('/upload', methods=['POST'])
+@login_required
 def upload_file():
     try:
         if 'file' not in request.files:
@@ -385,7 +530,14 @@ def upload_file():
             print(f"Opening PDF for metadata extraction: {file_path}")
             page_count, toc = get_pdf_metadata(pdf_bytes=file_bytes)
             print(f"PDF opened successfully. Total pages: {page_count}")
-            new_book = Book(title=filename, filename=save_name, page_count=page_count, pdf_data=file_bytes)
+            current_user = get_current_user()
+            new_book = Book(
+                title=filename,
+                filename=save_name,
+                page_count=page_count,
+                pdf_data=file_bytes,
+                owner_id=current_user.id if current_user else None
+            )
             db.session.add(new_book)
             db.session.commit()
             # Start background pre-rendering
@@ -407,31 +559,85 @@ def upload_file():
 @app.route('/book/<int:book_id>')
 def view_book(book_id):
     book = Book.query.get_or_404(book_id)
-    return render_template('flipbook.html', book_data=book)
+    require_book_access(book)
+    return render_template(
+        'flipbook.html',
+        book_data=book,
+        can_annotate=can_manage_book(book)
+    )
+
+@app.route('/shared/<string:token>')
+def open_shared_book(token):
+    share_token = ShareToken.query.filter_by(token=token, is_active=True).first_or_404()
+    grant_shared_book_access(share_token.book_id)
+    return redirect(url_for('view_book', book_id=share_token.book_id))
+
+@app.route('/api/book/<int:book_id>/share-links', methods=['POST'])
+@login_required
+def create_share_link(book_id):
+    book = Book.query.get_or_404(book_id)
+    if not can_manage_book(book):
+        return jsonify({'error': 'Book access required'}), 403
+
+    current_user = get_current_user()
+    token = secrets.token_urlsafe(24)
+    share_token = ShareToken(
+        token=token,
+        book_id=book.id,
+        created_by_id=current_user.id if current_user else None
+    )
+    db.session.add(share_token)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'share_url': url_for('open_shared_book', token=token, _external=True)
+    })
 
 @app.route('/api/book/<int:book_id>/pdf')
 def get_book_pdf(book_id):
     book = Book.query.get_or_404(book_id)
+    require_book_access(book)
     if book.pdf_data:
-        return send_file(
+        response = send_file(
             BytesIO(book.pdf_data),
             mimetype='application/pdf',
             as_attachment=False,
-            download_name=book.title
+            download_name=book.title,
+            conditional=True,
+            etag=False,
+            max_age=0
         )
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
 
     file_path = ensure_book_pdf_file(book)
     if not file_path:
         return jsonify({'error': 'PDF file missing'}), 404
-    return send_file(file_path, mimetype='application/pdf', as_attachment=False, download_name=book.title)
+    response = send_file(
+        file_path,
+        mimetype='application/pdf',
+        as_attachment=False,
+        download_name=book.title,
+        conditional=True,
+        etag=False,
+        max_age=0
+    )
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
 @app.route('/api/book/<int:book_id>/page/<int:page_num>')
 def get_page(book_id, page_num):
     book = Book.query.get_or_404(book_id)
+    require_book_access(book)
     pdf_bytes = book.pdf_data
     file_path = None if pdf_bytes else ensure_book_pdf_file(book)
     
     # Critical: Check if the source PDF still exists (important for Vercel/Temporary storage)
-    if not file_path or not os.path.exists(file_path):
+    if not pdf_bytes and (not file_path or not os.path.exists(file_path)):
         print(f"CRITICAL: PDF source missing at {file_path}")
         return jsonify({
             'error': 'PDF file not found on the server.',
@@ -479,6 +685,7 @@ def get_page(book_id, page_num):
 @app.route('/api/book/<int:book_id>/toc')
 def get_toc(book_id):
     book = Book.query.get_or_404(book_id)
+    require_book_access(book)
     if book.pdf_data:
         _, toc = get_pdf_metadata(pdf_bytes=book.pdf_data)
         return jsonify(toc)
@@ -492,7 +699,11 @@ def get_toc(book_id):
 @app.route('/api/book/<int:book_id>/notes', methods=['GET', 'POST'])
 def handle_notes(book_id):
     try:
+        book = Book.query.get_or_404(book_id)
+        require_book_access(book)
         if request.method == 'POST':
+            if not can_manage_book(book):
+                return jsonify({'error': 'Book access required'}), 403
             data = request.json
             if not data or 'page_number' not in data or 'content' not in data:
                 return jsonify({'error': 'Missing required fields'}), 400
@@ -524,7 +735,11 @@ def handle_notes(book_id):
 @app.route('/api/book/<int:book_id>/highlights', methods=['GET', 'POST'])
 def handle_highlights(book_id):
     try:
+        book = Book.query.get_or_404(book_id)
+        require_book_access(book)
         if request.method == 'POST':
+            if not can_manage_book(book):
+                return jsonify({'error': 'Book access required'}), 403
             data = request.json
             if not data or 'page_number' not in data or 'coordinates' not in data:
                 return jsonify({'error': 'Missing required fields'}), 400
@@ -552,6 +767,8 @@ def handle_highlights(book_id):
 @app.route('/api/book/<int:book_id>/delete', methods=['DELETE'])
 def delete_book(book_id):
     book = Book.query.get_or_404(book_id)
+    if not can_manage_book(book):
+        return jsonify({'error': 'Book access required'}), 403
     # Remove files
     try:
         # PDF file
@@ -573,6 +790,8 @@ def delete_book(book_id):
 def update_book(book_id):
     try:
         book = Book.query.get_or_404(book_id)
+        if not can_manage_book(book):
+            return jsonify({'error': 'Book access required'}), 403
         data = request.json
         if not data:
             return jsonify({'error': 'No data provided'}), 400
@@ -585,10 +804,11 @@ def update_book(book_id):
         print(f"Update book error: {str(e)}")
         return jsonify({'error': f'Update failed: {str(e)}'}), 500
 @app.route('/api/note/<int:note_id>', methods=['DELETE'])
-@admin_required
 def delete_note(note_id):
     try:
         note = Note.query.get_or_404(note_id)
+        if not can_manage_book(note.book):
+            return jsonify({'error': 'Book access required'}), 403
         db.session.delete(note)
         db.session.commit()
         return jsonify({'success': True})
@@ -597,10 +817,11 @@ def delete_note(note_id):
         print(f"Delete note error: {str(e)}")
         return jsonify({'error': f'Delete failed: {str(e)}'}), 500
 @app.route('/api/highlight/<int:highlight_id>', methods=['DELETE'])
-@admin_required
 def delete_highlight(highlight_id):
     try:
         highlight = Highlight.query.get_or_404(highlight_id)
+        if not can_manage_book(highlight.book):
+            return jsonify({'error': 'Book access required'}), 403
         db.session.delete(highlight)
         db.session.commit()
         return jsonify({'success': True})

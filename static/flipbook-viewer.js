@@ -4,12 +4,13 @@ let allNotes = [];
 let allHighlights = [];
 
 let currentAudioIndex = 0;
+let audioUnlocked = false;
 function playPageTurnSound() {
     const audioIds = ['page-turn-sound-1', 'page-turn-sound-2'];
     const audio = document.getElementById(audioIds[currentAudioIndex]);
     currentAudioIndex = (currentAudioIndex + 1) % audioIds.length;
 
-    if (audio) {
+    if (audio && audioUnlocked) {
         audio.volume = 1.0;
         audio.currentTime = 0;
         audio.play().catch(() => { });
@@ -19,22 +20,138 @@ function playPageTurnSound() {
 $(document).ready(function () {
     const $flipbook = $('#flipbook');
     const $rangeDisplay = $('#current-pages-range');
+    const $loadingPopup = $('#flipbook-loading');
+    const $mobileReaderStage = $('#mobile-reader-stage');
+    const $mobileCanvas = $('#mobile-page-canvas');
+    const $mobilePageIndicator = $('#mobile-page-indicator');
     const PDF_PAGE_COUNT = parseInt(WINDOW_BOOK_DATA.page_count, 10) || 0;
     const BOOK_ID = WINDOW_BOOK_DATA.id;
     const renderedPages = new Set();
     const quickRenderedPages = new Set();
     const renderingPages = new Map();
     let pdfDocumentPromise = null;
+    let mobilePageIndex = 0;
+    let viewportMode = window.innerWidth < 768 ? 'mobile' : 'desktop';
+    let mobileZoom = 1;
+    let mobilePanX = 0;
+    let mobilePanY = 0;
+    let mobileSwipeState = null;
+    let mobilePinchState = null;
+    const MOBILE_EDGE_SWIPE_ZONE = 56;
 
     if (window.pdfjsLib) {
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
+
+    $(document).one('pointerdown keydown touchstart', () => {
+        unlockAudio();
+    });
 
     function getPdfDocument() {
         if (!pdfDocumentPromise) {
             pdfDocumentPromise = pdfjsLib.getDocument(WINDOW_BOOK_DATA.pdf_url).promise;
         }
         return pdfDocumentPromise;
+    }
+
+    function hideLoadingPopup() {
+        $loadingPopup.addClass('is-hidden');
+    }
+
+    function showLoadingPopup(message) {
+        if (message) {
+            $loadingPopup.find('.loading-copy p').text(message);
+        }
+        $loadingPopup.removeClass('is-hidden');
+    }
+
+    function unlockAudio() {
+        if (audioUnlocked) return;
+        const audioIds = ['page-turn-sound-1', 'page-turn-sound-2'];
+        audioIds.forEach((audioId) => {
+            const audio = document.getElementById(audioId);
+            if (!audio) return;
+            audio.muted = true;
+            audio.play()
+                .then(() => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    audio.muted = false;
+                    audioUnlocked = true;
+                })
+                .catch(() => { });
+        });
+    }
+
+    function isMobileViewport() {
+        return window.innerWidth <= 768 || (window.innerHeight < 500 && window.innerWidth < 950);
+    }
+
+    function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
+    function updateZoomLabel() {
+        $('#mobile-zoom-reset-btn').text(`${Math.round(mobileZoom * 100)}%`);
+    }
+
+    function setMobileSwipeVisual(progress = 0, direction = 1) {
+        const normalizedProgress = clamp(progress, 0, 1);
+        const normalizedDirection = direction >= 0 ? 1 : -1;
+        $mobileReaderStage.css('--mobile-swipe-progress', normalizedProgress.toFixed(3));
+        $mobileReaderStage.css('--mobile-swipe-direction', normalizedDirection.toString());
+    }
+
+    function updateMobilePageIndicator() {
+        if ($mobilePageIndicator.length) {
+            $mobilePageIndicator.text(`${mobilePageIndex + 1} / ${PDF_PAGE_COUNT}`);
+        }
+    }
+
+    function applyMobileTransform(options = {}) {
+        const animate = options.animate === true;
+        const swipeOffsetX = options.swipeOffsetX || 0;
+        if (!$mobileCanvas.length) return;
+
+        const swipeProgress = Math.abs(swipeOffsetX) / Math.max($mobileReaderStage.innerWidth() || 1, 1);
+        const swipeDirection = swipeOffsetX >= 0 ? 1 : -1;
+        const translatedX = mobilePanX + swipeOffsetX;
+        const scale = mobileZoom > 1.02 ? mobileZoom : mobileZoom - Math.min(swipeProgress * 0.012, 0.012);
+
+        $mobileReaderStage.toggleClass('is-animating', animate);
+        $mobileReaderStage.toggleClass('is-swiping', !animate && swipeOffsetX !== 0);
+        setMobileSwipeVisual(swipeProgress, swipeOffsetX || 1);
+        $mobileCanvas.css(
+            'transform',
+            `translate3d(${translatedX}px, ${mobilePanY}px, 0) scale(${scale})`
+        );
+        if (mobileZoom <= 1.02) {
+            $mobileCanvas.css('opacity', `${1 - Math.min(swipeProgress * 0.22, 0.22)}`);
+        }
+        updateZoomLabel();
+    }
+
+    function resetMobileZoom(options = {}) {
+        mobileZoom = 1;
+        mobilePanX = 0;
+        mobilePanY = 0;
+        applyMobileTransform(options);
+    }
+
+    function setMobileZoom(nextZoom, options = {}) {
+        mobileZoom = clamp(nextZoom, 1, 3);
+        if (mobileZoom === 1) {
+            mobilePanX = 0;
+            mobilePanY = 0;
+        } else {
+            mobilePanX = clamp(mobilePanX, -120 * (mobileZoom - 1), 120 * (mobileZoom - 1));
+            mobilePanY = clamp(mobilePanY, -180 * (mobileZoom - 1), 180 * (mobileZoom - 1));
+        }
+        applyMobileTransform(options);
+    }
+
+    function getTouchDistance(touchA, touchB) {
+        return Math.hypot(touchA.clientX - touchB.clientX, touchA.clientY - touchB.clientY);
     }
 
     function preloadAnnotations() {
@@ -78,7 +195,7 @@ $(document).ready(function () {
         const $el = $(`
             <div class="note-marker" style="left:${note.x}%; top:${note.y}%" title="${note.content}">
                 <i class="fas fa-sticky-note text-[10px]"></i>
-                ${WINDOW_BOOK_DATA.is_admin ? `
+                ${WINDOW_BOOK_DATA.can_annotate ? `
                 <div class="delete-annotation" onclick="deleteNote(${note.id}, this); event.stopPropagation();">
                     <i class="fas fa-times"></i>
                 </div>` : ''}
@@ -100,7 +217,7 @@ $(document).ready(function () {
         const colorClass = `highlight-${hl.color || 'yellow'}`;
         const $el = $(`
             <div class="highlight-marker ${colorClass}" style="left:${rect.x}%; top:${rect.y}%; width:${rect.w}%; height:${rect.h}%;">
-                ${WINDOW_BOOK_DATA.is_admin ? `
+                ${WINDOW_BOOK_DATA.can_annotate ? `
                 <div class="delete-annotation" onclick="deleteHighlight(${hl.id}, this); event.stopPropagation();">
                     <i class="fas fa-times"></i>
                 </div>` : ''}
@@ -128,6 +245,87 @@ $(document).ready(function () {
         const viewport = page.getViewport({ scale: Math.max(fitScale, 0.1) * qualityScale });
 
         return { viewport, qualityScale };
+    }
+
+    function getMobileViewportForPage(page) {
+        const baseViewport = page.getViewport({ scale: 1 });
+        const containerWidth = $mobileReaderStage.innerWidth() || (window.innerWidth * 0.88);
+        const containerHeight = $mobileReaderStage.innerHeight() || (window.innerHeight * 0.72);
+        const fitScale = Math.min(
+            containerWidth / baseViewport.width,
+            containerHeight / baseViewport.height
+        );
+        const deviceScale = window.devicePixelRatio || 1;
+        const viewport = page.getViewport({ scale: Math.max(fitScale, 0.1) * deviceScale });
+
+        return { viewport, qualityScale: deviceScale };
+    }
+
+    function updateMobileNavState() {
+        $('#mobile-prev-btn').prop('disabled', mobilePageIndex <= 0);
+        $('#mobile-next-btn').prop('disabled', mobilePageIndex >= PDF_PAGE_COUNT - 1);
+    }
+
+    async function renderMobilePage(pageNum) {
+        const canvas = $mobileCanvas.get(0);
+        if (!canvas || pageNum < 0 || pageNum >= PDF_PAGE_COUNT) {
+            return;
+        }
+
+        try {
+            const pdf = await getPdfDocument();
+            const page = await pdf.getPage(pageNum + 1);
+            const { viewport, qualityScale } = getMobileViewportForPage(page);
+            const context = canvas.getContext('2d', { alpha: false });
+
+            canvas.width = Math.floor(viewport.width);
+            canvas.height = Math.floor(viewport.height);
+            canvas.style.width = `${Math.floor(viewport.width / qualityScale)}px`;
+            canvas.style.height = `${Math.floor(viewport.height / qualityScale)}px`;
+
+            await page.render({ canvasContext: context, viewport }).promise;
+            canvas.style.opacity = '1';
+            mobilePageIndex = pageNum;
+            $rangeDisplay.text(`${pageNum + 1}`);
+            updateMobilePageIndicator();
+            updateMobileNavState();
+            resetMobileZoom({ animate: false });
+            hideLoadingPopup();
+        } catch (error) {
+            console.error(`Mobile PDF render failed for page ${pageNum + 1}:`, error);
+            showLoadingPopup('The PDF could not be loaded. Please refresh or open the original file.');
+        }
+    }
+
+    async function animateMobilePageTurn(direction) {
+        if (direction !== 1 && direction !== -1) return;
+        const targetPage = mobilePageIndex + direction;
+        if (targetPage < 0 || targetPage >= PDF_PAGE_COUNT) return;
+
+        playPageTurnSound();
+        $mobileReaderStage.removeClass('is-swiping').addClass('is-animating');
+        setMobileSwipeVisual(0.34, direction);
+        $mobileCanvas.css({
+            transform: `translate3d(${direction * -68}px, 0, 0) scale(0.988)`,
+            opacity: '0.42'
+        });
+
+        window.setTimeout(async () => {
+            await renderMobilePage(targetPage);
+            setMobileSwipeVisual(0.22, -direction);
+            $mobileCanvas.css({
+                transform: `translate3d(${direction * 28}px, 0, 0) scale(0.996)`,
+                opacity: '0.82'
+            });
+            requestAnimationFrame(() => {
+                applyMobileTransform({ animate: true });
+                $mobileCanvas.css('opacity', '1');
+            });
+            window.setTimeout(() => {
+                $mobileReaderStage.removeClass('is-animating');
+                setMobileSwipeVisual(0, 1);
+            }, 230);
+        }, 150);
     }
 
     async function renderPdfPage($pageEl, options = {}) {
@@ -197,6 +395,8 @@ $(document).ready(function () {
                 loadAnnotations(pageNum, $p);
             }
         });
+
+        hideLoadingPopup();
     }
 
     const debouncedLoad = _.debounce(function (view) {
@@ -219,11 +419,20 @@ $(document).ready(function () {
     function getBookSize() {
         const width = window.innerWidth;
         const height = window.innerHeight;
-        const isMobile = width < 768;
+        const isMobile = isMobileViewport();
 
         if (isMobile) {
-            const w = width * 0.95;
-            const h = height * 0.7;
+            const maxWidth = width * 0.92;
+            const maxHeight = height * 0.76;
+            const portraitRatio = 0.72;
+            let w = Math.min(maxWidth, maxHeight * portraitRatio);
+            let h = w / portraitRatio;
+
+            if (h > maxHeight) {
+                h = maxHeight;
+                w = h * portraitRatio;
+            }
+
             return { width: w, height: h, display: 'single' };
         }
 
@@ -284,14 +493,54 @@ $(document).ready(function () {
                 }
             }
         });
+
+        if (isMobileViewport()) {
+            debouncedLoad($flipbook.turn('view'));
+        }
     } catch (e) {
         console.error('Turn.js error:', e);
     }
 
-    $(window).resize(_.debounce(resizeFlipbook, 150));
+    $(window).resize(_.debounce(function () {
+        const nextMode = isMobileViewport() ? 'mobile' : 'desktop';
+        if (nextMode !== viewportMode) {
+            window.location.reload();
+            return;
+        }
+        resizeFlipbook();
+    }, 150));
 
     $('#prev-btn').click(() => $flipbook.turn('previous'));
     $('#next-btn').click(() => $flipbook.turn('next'));
+    $('#mobile-prev-btn').click(() => {
+        unlockAudio();
+        $flipbook.turn('previous');
+    });
+    $('#mobile-next-btn').click(() => {
+        unlockAudio();
+        $flipbook.turn('next');
+    });
+    $('#mobile-zoom-in-btn').click(() => setMobileZoom(mobileZoom + 0.2, { animate: true }));
+    $('#mobile-zoom-out-btn').click(() => setMobileZoom(mobileZoom - 0.2, { animate: true }));
+    $('#mobile-zoom-reset-btn').click(() => resetMobileZoom({ animate: true }));
+
+    let isWheeling = false;
+    $(window).on('wheel', function (e) {
+        if (isMobileViewport() || isWheeling) return;
+        if (currentMode) return;
+
+        const deltaX = e.originalEvent.deltaX;
+
+        if (Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(e.originalEvent.deltaY)) {
+            isWheeling = true;
+            if (deltaX > 0) {
+                $flipbook.turn('next');
+            } else {
+                $flipbook.turn('previous');
+            }
+            setTimeout(() => { isWheeling = false; }, 600);
+        }
+    });
 
     $(window).bind('keydown', function (e) {
         if (e.keyCode === 37) $flipbook.turn('previous');
@@ -328,6 +577,8 @@ $(document).ready(function () {
         if (startX - endX > 100) $flipbook.turn('next');
         if (endX - startX > 100) $flipbook.turn('previous');
     });
+
+
 
     let highlightStart = null;
     let $highlightPreview = null;
@@ -477,16 +728,21 @@ $(document).ready(function () {
     setTimeout(() => {
         getPdfDocument()
             .then(() => {
-                const currentView = $flipbook.turn('view');
-                load(currentView);
-                window.setTimeout(preloadAnnotations, 150);
-                window.setTimeout(() => {
-                    const lastPage = Math.max(...currentView);
-                    preloadPages(lastPage);
-                }, 80);
+                if (isMobileViewport()) {
+                    renderMobilePage(mobilePageIndex);
+                } else {
+                    const currentView = $flipbook.turn('view');
+                    load(currentView);
+                    window.setTimeout(preloadAnnotations, 150);
+                    window.setTimeout(() => {
+                        const lastPage = Math.max(...currentView);
+                        preloadPages(lastPage);
+                    }, 80);
+                }
             })
             .catch(error => {
                 console.error('PDF document load failed:', error);
+                showLoadingPopup('The PDF could not be loaded. Please refresh or open the original file.');
                 $flipbook.find('.page[data-page]').each(function () {
                     const pageNum = parseInt($(this).data('page'), 10);
                     const canvas = $(this).find('.pdf-page-canvas').get(0);
@@ -530,14 +786,14 @@ function setMode(mode) {
     currentMode = mode;
     $('#note-mode-btn').removeClass('text-yellow-600 bg-yellow-100');
     $('#highlight-mode-btn').removeClass('text-yellow-600 bg-yellow-100');
-    $('#color-picker').hide();
+    $('#color-picker').addClass('hidden');
 
     if (mode === 'note') {
         $('#note-mode-btn').addClass('text-yellow-600 bg-yellow-100');
         document.body.style.cursor = 'crosshair';
     } else if (mode === 'highlight') {
         $('#highlight-mode-btn').addClass('text-yellow-600 bg-yellow-100');
-        $('#color-picker').show();
+        $('#color-picker').removeClass('hidden');
         document.body.style.cursor = 'text';
     } else {
         document.body.style.cursor = 'default';
