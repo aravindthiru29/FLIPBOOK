@@ -511,12 +511,23 @@ def upload_file():
         if file.filename == '':
             return jsonify({'error': 'No selected file'}), 400
         if file and file.filename.lower().endswith('.pdf'):
+            print(f"Processing upload for file: {file.filename}")
             # Ensure upload folder exists
             if not os.path.exists(app.config['UPLOAD_FOLDER']):
+                print(f"Creating upload folder: {app.config['UPLOAD_FOLDER']}")
                 os.makedirs(app.config['UPLOAD_FOLDER'])
+            
+            # Read bytes
             file_bytes = file.read()
+            print(f"Read {len(file_bytes)} bytes from upload")
+            
             if not file_bytes:
                 return jsonify({'error': 'Uploaded file is empty'}), 400
+            
+            # Vercel Payload Limit Warning (approx 4.5MB)
+            if IS_VERCEL and len(file_bytes) > 4 * 1024 * 1024:
+                print(f"WARNING: File size ({len(file_bytes)}) may exceed Vercel body limit.")
+            
             filename = secure_filename(file.filename)
             # Unique folder for each book to avoid collisions
             unique_id = str(uuid.uuid4())[:8]
@@ -538,8 +549,10 @@ def upload_file():
                 pdf_data=file_bytes,
                 owner_id=current_user.id if current_user else None
             )
+            print(f"PDF record created: {new_book.title}. Committing to DB...")
             db.session.add(new_book)
             db.session.commit()
+            print(f"Successfully committed book ID {new_book.id} to database.")
             # Start background pre-rendering
             if not IS_VERCEL:
                 thread = threading.Thread(target=pre_render_book, args=(file_path, new_book.id, page_count))
