@@ -3,48 +3,106 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flipbook</title>
+    <title>{% block title %}Book Buddy - Interactive Flipbooks{% endblock %}</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
+                        sans: ['Poppins', 'sans-serif'],
+                        serif: ['Playfair Display', 'serif'],
                     },
+                    colors: {
+                        brandNavy: '#162054',     // Extracted Deep Navy
+                        brandMaroon: '#6A1A2A',   // Extracted Rich Maroon
+                        brandPaper: '#F8FAFC'     // Clean Slate Off-White
+                    }
                 }
             }
         }
     </script>
+    
     <style>
         body {
-            background-color: #f8f9fa;
-            color: #333;
+            background-color: #F8FAFC; /* brandPaper */
+            color: #162054; /* brandNavy */
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
+        
+        /* Smooth Entrance Animation */
         .animate-fade-in {
-            animation: fadeIn 0.5s ease-out forwards;
+            animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
+        
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Premium Glassmorphism Navbar */
+        .glass-nav {
+            background: rgba(248, 250, 252, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(22, 32, 84, 0.05);
         }
     </style>
+    
     {% block extra_css %}{% endblock %}
 </head>
-<body class="font-sans antialiased">
-    <div class="min-h-screen">
-        <main class="w-full">
-            {% block content %}{% endblock %}
-        </main>
-    </div>
+<body class="font-sans flex flex-col min-h-screen">
+    
+    <nav class="glass-nav sticky top-0 z-[60]">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-20">
+                
+                <div class="flex items-center shrink-0">
+                    <a href="{{ url_for('index') }}" class="flex items-center gap-3 text-brandNavy hover:text-brandMaroon transition-colors duration-300 group">
+                        <div class="w-11 h-11 bg-brandNavy text-brandPaper rounded-xl flex items-center justify-center shadow-lg group-hover:bg-brandMaroon transition-all duration-300 transform group-hover:-translate-y-1">
+                            <i class="fa-solid fa-book-open-reader text-xl"></i>
+                        </div>
+                        <span class="text-2xl font-serif font-bold tracking-tight hidden sm:block">Book<span class="text-brandMaroon">Buddy</span></span>
+                    </a>
+                </div>
+                
+                <div class="flex items-center gap-3 sm:gap-5">
+                    {% if session.get('user_id') %}
+                        <a href="{{ url_for('dashboard') }}" class="text-sm font-medium text-brandNavy hover:text-brandMaroon px-3 py-2 transition-all">My Library</a>
+                        <div class="w-px h-5 bg-brandNavy/20 mx-1"></div>
+                        <a href="{{ url_for('logout') }}" class="text-sm font-medium text-brandNavy border border-brandNavy/20 hover:bg-brandNavy hover:text-brandPaper px-5 py-2.5 rounded-lg transition-all">Logout</a>
+                    {% elif session.get('is_admin') %}
+                        <a href="{{ url_for('admin_dashboard') }}" class="text-sm font-medium text-brandNavy hover:text-brandMaroon px-3 py-2 transition-all">Dashboard</a>
+                        <div class="w-px h-5 bg-brandNavy/20 mx-1"></div>
+                        <a href="{{ url_for('admin_logout') }}" class="text-sm font-medium text-brandNavy border border-brandNavy/20 hover:bg-brandNavy hover:text-brandPaper px-5 py-2.5 rounded-lg transition-all">Exit Admin</a>
+                    {% else %}
+                        <a href="{{ url_for('login') }}" class="text-sm font-medium text-brandNavy hover:text-brandMaroon px-3 py-2 transition-all">Log In</a>
+                        <a href="{{ url_for('register') }}" class="text-sm font-medium bg-brandNavy text-brandPaper px-6 py-2.5 rounded-xl hover:bg-brandMaroon transition-all duration-300 shadow-md hover:shadow-xl hover:-translate-y-0.5">Sign Up</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow w-full animate-fade-in relative z-10 pt-6 pb-12">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="bg-transparent border-t border-brandNavy/5 mt-auto relative z-10">
+        <div class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-center items-center text-center">
+            <div class="text-sm font-medium text-brandNavy/50 tracking-wide">
+                &copy; <script>document.write(new Date().getFullYear())</script> Book Buddy. All rights reserved.
+            </div>
+        </div>
+    </footer>
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     {% block scripts %}{% endblock %}
 </body>

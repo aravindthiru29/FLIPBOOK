@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}My Workspace - Book Buddy{% endblock %}
+
+{% block content %}
+{% set book_count = books|length %}
+{% set is_admin = session.get('is_admin') %}
+{% set limit = current_user.upload_limit if current_user else 3 %}
+{% set is_at_limit = (book_count >= limit) %}
+{% set can_upload = is_admin or not is_at_limit %}
+{% set usage_percent = (book_count / limit * 100) if limit > 0 else 0 %}
+
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
+    
+    <div class="mb-12 pt-4">
+        <h1 class="text-3xl sm:text-4xl font-serif font-bold text-brandNavy mb-2">My Workspace</h1>
+        <p class="text-brandNavy/60 font-medium mb-8">Manage your documents, track storage, and publish new flipbooks.</p>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="bg-white rounded-[2rem] p-8 border border-brandNavy/5 shadow-[0_4px_20px_rgb(22,32,84,0.03)] flex flex-col justify-between relative overflow-hidden group">
+                <div class="absolute -right-6 -top-6 w-24 h-24 bg-brandNavy/5 rounded-full group-hover:scale-150 transition-transform duration-700 pointer-events-none"></div>
+                <div class="flex justify-between items-start mb-4 relative z-10">
+                    <div class="w-12 h-12 bg-brandNavy rounded-2xl flex items-center justify-center text-white shadow-md">
+                        <i class="fa-solid fa-book-open"></i>
+                    </div>
+                </div>
+                <div class="relative z-10">
+                    <p class="text-sm font-bold text-brandNavy/50 uppercase tracking-widest mb-1">Total Published</p>
+                    <h2 class="text-4xl font-serif font-bold text-brandNavy">{{ book_count }} <span class="text-xl text-brandNavy/30 font-sans font-normal">Books</span></h2>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-[2rem] p-8 border border-brandNavy/5 shadow-[0_4px_20px_rgb(22,32,84,0.03)] flex flex-col justify-between">
+                <div class="flex justify-between items-start mb-6">
+                    <div class="w-12 h-12 bg-brandMaroon/10 rounded-2xl flex items-center justify-center text-brandMaroon">
+                        <i class="fa-solid fa-hard-drive"></i>
+                    </div>
+                    {% if is_admin %}
+                        <span class="bg-brandNavy text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">Unlimited</span>
+                    {% else %}
+                        <span class="bg-[#F8FAFC] border border-brandNavy/10 text-brandNavy text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">{{ limit - book_count }} Slots Left</span>
+                    {% endif %}
+                </div>
+                <div>
+                    <div class="flex justify-between items-end mb-2">
+                        <p class="text-sm font-bold text-brandNavy/50 uppercase tracking-widest">Storage Used</p>
+                        {% if not is_admin %}
+                            <p class="text-sm font-bold text-brandNavy">{{ usage_percent|round|int }}%</p>
+                        {% endif %}
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden border border-brandNavy/5">
+                        <div class="bg-brandMaroon h-full rounded-full transition-all duration-1000 relative" style="width: {{ usage_percent }}%">
+                            <div class="absolute inset-0 bg-white/20 w-full h-full animate-[shimmer_2s_infinite]"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="h-full">
+                {% if can_upload %}
+                <button id="bento-upload-trigger" class="w-full h-full bg-[#F8FAFC] border-2 border-dashed border-brandNavy/15 hover:border-brandMaroon hover:bg-white rounded-[2rem] p-8 flex flex-col items-center justify-center text-center shadow-sm hover:shadow-xl transition-all duration-300 group cursor-pointer min-h-[200px]">
+                    <div class="w-14 h-14 bg-white rounded-full flex items-center justify-center mb-4 group-hover:scale-110 group-hover:bg-brandMaroon group-hover:text-white transition-all duration-300 shadow-sm border border-brandNavy/5 text-brandMaroon">
+                        <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
+                    </div>
+                    <h4 class="font-serif font-bold text-brandNavy text-lg mb-1">Upload PDF</h4>
+                    <p class="text-xs text-brandNavy/50 font-medium">Drag & drop or click to browse</p>
+                </button>
+                {% else %}
+                <div class="w-full h-full bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-8 flex flex-col items-center justify-center text-center opacity-75 min-h-[200px]">
+                    <div class="w-14 h-14 bg-slate-200 rounded-full flex items-center justify-center mb-4 text-slate-400">
+                        <i class="fa-solid fa-ban text-xl"></i>
+                    </div>
+                    <h4 class="font-serif font-bold text-slate-500 text-lg mb-1">Storage Full</h4>
+                    <p class="text-xs text-slate-400 font-medium">Delete a book to upload more</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <h2 class="text-2xl font-serif font-bold text-brandNavy">Library Index</h2>
+        <div class="relative w-full md:w-[400px] group">
+            <i class="fa-solid fa-magnifying-glass absolute left-5 top-1/2 -translate-y-1/2 text-brandNavy/30 group-focus-within:text-brandMaroon transition-colors text-sm"></i>
+            <input type="text" id="library-search" placeholder="Search publications..."
+                class="w-full bg-white border border-brandNavy/10 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-medium text-brandNavy focus:outline-none focus:ring-2 focus:ring-brandMaroon/30 focus:border-brandMaroon transition-all shadow-sm">
+        </div>
+    </div>
+
+    <input type="file" id="pdf-input" class="hidden" accept=".pdf">
+    
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {% if not books %}
+        <div class="col-span-full py-20 bg-white rounded-[2rem] border border-brandNavy/5 flex flex-col items-center justify-center text-center shadow-sm">
+            <div class="w-20 h-20 bg-brandNavy/5 rounded-full flex items-center justify-center text-brandNavy/30 text-3xl mb-4">
+                <i class="fa-solid fa-folder-open"></i>
+            </div>
+            <h3 class="text-xl font-serif font-bold text-brandNavy mb-2">Your library is empty</h3>
+            <p class="text-brandNavy/50 text-sm max-w-sm">Use the upload button above to add your first PDF and generate a flipbook.</p>
+        </div>
+        {% endif %}
+
+        {% for book in books %}
+        <div class="bg-white rounded-[1.5rem] border border-brandNavy/5 shadow-[0_4px_15px_rgb(22,32,84,0.02)] hover:shadow-[0_15px_35px_rgb(22,32,84,0.06)] transition-all duration-300 flex overflow-hidden group h-52 sm:h-56">
+            
+            <a href="{{ url_for('view_book', book_id=book.id) }}" class="relative w-1/3 sm:w-2/5 shrink-0 bg-[#F8FAFC] border-r border-brandNavy/5 block overflow-hidden">
+                <div class="absolute left-0 top-0 bottom-0 w-4 bg-gradient-to-r from-black/10 to-transparent z-10 pointer-events-none"></div>
+                
+                <img src="/api/book/{{ book.id }}/page/0" alt="{{ book.title }}"
+                    class="w-full h-full object-cover transform scale-100 group-hover:scale-110 transition-transform duration-700 ease-out"
+                    loading="lazy"
+                    onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 120\'%3E%3Cdefs%3E%3ClinearGradient id=\'grad\' x1=\'0%25\' y1=\'0%25\' x2=\'100%25\' y2=\'100%25\'%3E%3Cstop offset=\'0%25\' stop-color=\'%23ffffff\' /%3E%3Cstop offset=\'100%25\' stop-color=\'%236A1A2A\' /%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=\'100\' height=\'120\' fill=\'url(%23grad)\'/%3E%3Ctext x=\'50\' y=\'65\' font-family=\'sans-serif\' font-size=\'16\' fill=\'%23162054\' font-weight=\'bold\' text-anchor=\'middle\' opacity=\'0.2\'%3EPDF%3C/text%3E%3C/svg%3E'">
+                
+                <div class="absolute inset-0 bg-brandNavy/80 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center z-20 backdrop-blur-[2px]">
+                    <div class="text-white text-3xl transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300 drop-shadow-lg">
+                        <i class="fa-solid fa-circle-play"></i>
+                    </div>
+                </div>
+            </a>
+            
+            <div class="w-2/3 sm:w-3/5 p-5 sm:p-6 flex flex-col justify-between bg-white relative z-30">
+                <div>
+                    <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#F8FAFC] text-[9px] font-bold text-brandNavy/50 uppercase tracking-widest mb-3 border border-brandNavy/5">
+                        <i class="fa-regular fa-calendar"></i> {{ book.created_at.strftime('%b %d, %Y') }}
+                    </div>
+                    <h4 class="text-brandNavy font-serif font-bold text-lg sm:text-xl leading-tight line-clamp-2 mb-2 group-hover:text-brandMaroon transition-colors" title="{{ book.title }}">
+                        {{ book.title }}
+                    </h4>
+                    <p class="text-xs font-medium text-brandNavy/50 flex items-center gap-2">
+                        <i class="fa-regular fa-file-lines"></i> {{ book.page_count }} Pages
+                    </p>
+                </div>
+                
+                <div class="flex items-center justify-end gap-2 pt-4 mt-auto">
+                    <button onclick="shareBook('{{ book.id }}')" class="w-10 h-10 rounded-xl flex items-center justify-center text-brandNavy/50 hover:text-white hover:bg-brandNavy bg-[#F8FAFC] border border-brandNavy/5 hover:border-transparent transition-all duration-300" title="Share Link">
+                        <i class="fa-solid fa-link text-sm"></i>
+                    </button>
+                    <button onclick="editBook('{{ book.id }}', this.dataset.title)" data-title="{{ book.title }}" class="w-10 h-10 rounded-xl flex items-center justify-center text-brandNavy/50 hover:text-white hover:bg-brandNavy bg-[#F8FAFC] border border-brandNavy/5 hover:border-transparent transition-all duration-300" title="Rename Document">
+                        <i class="fa-solid fa-pen text-sm"></i>
+                    </button>
+                    <button onclick="deleteBook('{{ book.id }}', this)" class="w-10 h-10 rounded-xl flex items-center justify-center text-brandNavy/50 hover:text-white hover:bg-brandMaroon bg-[#F8FAFC] border border-brandNavy/5 hover:border-transparent transition-all duration-300" title="Delete Document">
+                        <i class="fa-solid fa-trash-can text-sm"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div id="upload-modal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-brandNavy/80 backdrop-blur-sm px-4 transition-opacity">
+    <div class="w-full max-w-md bg-white rounded-[2rem] p-10 text-center shadow-[0_20px_60px_rgb(22,32,84,0.3)] relative overflow-hidden">
+        <div class="w-20 h-20 bg-brandMaroon/5 rounded-full flex items-center justify-center mx-auto mb-6 relative">
+            <i class="fa-solid fa-spinner fa-spin text-3xl text-brandMaroon"></i>
+        </div>
+        <h3 class="text-2xl font-serif font-bold text-brandNavy mb-2">Publishing Book</h3>
+        <p class="text-brandNavy/50 text-sm font-medium mb-8">Rendering geometry and physics...</p>
+        
+        <div class="relative w-full h-2.5 bg-slate-100 rounded-full overflow-hidden mb-3">
+            <div id="progress-bar" class="absolute inset-0 bg-brandMaroon w-0 transition-all duration-300 ease-out rounded-full relative"></div>
+        </div>
+        <p id="progress-text" class="text-[10px] font-bold text-brandNavy/40 tracking-widest uppercase">Initializing Upload...</p>
+    </div>
+</div>
+
+<div id="toast" class="fixed bottom-8 right-8 z-[200] transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none">
+    <div class="bg-brandNavy text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-brandNavy/80">
+        <div class="w-8 h-8 bg-brandMaroon rounded-full flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-check text-xs text-white"></i>
+        </div>
+        <span id="toast-message" class="text-sm font-medium tracking-wide">Link copied!</span>
+    </div>
+</div>
+
+<style>
+    @keyframes shimmer {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const pdfInput = document.getElementById('pdf-input');
+    const bentoUploadBtn = document.getElementById('bento-upload-trigger');
+    const uploadModal = document.getElementById('upload-modal');
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+
+    if(bentoUploadBtn) bentoUploadBtn.onclick = () => pdfInput.click();
+
+    function showToast(message) {
+        const toast = document.getElementById('toast');
+        const toastMsg = document.getElementById('toast-message');
+        if(toast && toastMsg) {
+            toastMsg.innerText = message;
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            setTimeout(() => toast.classList.add('translate-y-24', 'opacity-0'), 3000);
+        }
+    }
+
+    function shareBook(bookId) {
+        const url = `${window.location.origin}/book/${bookId}`;
+        navigator.clipboard.writeText(url).then(() => showToast('Shareable link copied to clipboard!')).catch(err => {
+            console.error('Failed to copy', err);
+            alert('URL: ' + url);
+        });
+    }
+
+    async function deleteBook(bookId, btn) {
+        if (!confirm('Permanently delete this flipbook?')) return;
+        try {
+            const response = await fetch(`/api/book/${bookId}/delete`, { method: 'DELETE' });
+            if (response.ok) window.location.reload(); 
+            else alert('Failed to delete document.');
+        } catch (err) { console.error(err); }
+    }
+    
+    async function editBook(bookId, currentTitle) {
+        const newTitle = prompt("Enter a new title:", currentTitle);
+        if (!newTitle || newTitle.trim() === '' || newTitle === currentTitle) return;
+        try {
+            const response = await fetch(`/api/book/${bookId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: newTitle.trim() })
+            });
+            if (response.ok) window.location.reload();
+            else alert('Failed to update title.');
+        } catch (err) { console.error(err); }
+    }
+
+    if(pdfInput) {
+        pdfInput.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('file', file);
+            uploadModal.classList.remove('hidden');
+            uploadModal.classList.add('flex');
+
+            let p = 0;
+            const interval = setInterval(() => {
+                p += Math.random() * 8;
+                if (p > 92) p = 92; 
+                update(p);
+            }, 300);
+
+            try {
+                const response = await fetch('/upload', { method: 'POST', body: formData });
+                if (response.ok) {
+                    update(100);
+                    setTimeout(() => window.location.reload(), 500);
+                } else {
+                    let errorMessage = 'Upload Failed';
+                    try { const errorData = await response.json(); errorMessage = errorData.error || errorMessage; } 
+                    catch (e) { errorMessage = `Server Error ${response.status}`; }
+                    alert(errorMessage);
+                    resetModal();
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Network Error.');
+                resetModal();
+            } finally { clearInterval(interval); }
+        };
+    }
+    
+    function update(pct) {
+        if(progressBar && progressText) {
+            progressBar.style.width = Math.round(pct) + '%';
+            progressText.innerText = `Processing: ${Math.round(pct)}%`;
+        }
+    }
+    
+    function resetModal() {
+        if(uploadModal && pdfInput) {
+            uploadModal.classList.remove('flex');
+            uploadModal.classList.add('hidden');
+            pdfInput.value = '';
+        }
+    }
+
+    const searchInput = document.getElementById('library-search');
+    if(searchInput) {
+        searchInput.addEventListener('input', function (e) {
+            const term = e.target.value.toLowerCase();
+            const cards = document.querySelectorAll('.grid > div:not(button):not(.col-span-full)');
+            cards.forEach(card => {
+                const titleElement = card.querySelector('h4');
+                if(titleElement) {
+                    card.style.display = titleElement.innerText.toLowerCase().includes(term) ? '' : 'none';
+                }
+            });
+        });
+    }
+</script>
+{% endblock %}

@@ -1,41 +1,38 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="min-h-screen bg-[#f8f9fa]">
-    <!-- Top Navigation -->
-    <nav class="bg-white border-b border-gray-100 sticky top-0 z-50 px-8 py-4">
+<div class="min-h-screen bg-[#f9fafb]">
+    <nav class="bg-white border-b border-brandNavy/10 sticky top-0 z-50 px-8 py-4">
         <div class="max-w-7xl mx-auto flex items-center justify-between">
             <div class="flex items-center gap-4">
-                <div class="w-10 h-10 bg-gray-900 rounded-xl flex items-center justify-center">
+                <div class="w-10 h-10 bg-brandNavy rounded-xl flex items-center justify-center shadow-md shadow-brandNavy/20">
                     <i class="fas fa-crown text-white text-xs"></i>
                 </div>
                 <div>
-                    <h2 class="text-sm font-black uppercase tracking-tighter text-gray-900 leading-none">Admin</h2>
-                    <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Control Center</span>
+                    <h2 class="text-sm font-black uppercase tracking-tighter text-brandNavy leading-none">Admin</h2>
+                    <span class="text-[10px] font-bold text-brandNavy/40 uppercase tracking-widest">Control Center</span>
                 </div>
             </div>
 
             <div class="flex items-center gap-6">
-                <div class="h-8 w-[1px] bg-gray-100"></div>
+                <div class="h-8 w-[1px] bg-brandNavy/10"></div>
                 <a href="{{ url_for('index') }}"
-                    class="text-xs font-black uppercase tracking-widest text-gray-500 hover:text-blue-600 transition-colors">View
-                    Site</a>
+                    class="text-xs font-black uppercase tracking-widest text-brandNavy/50 hover:text-brandNavy transition-colors">View Site</a>
                 <a href="{{ url_for('admin_logout') }}"
-                    class="px-5 py-2.5 bg-red-50 text-red-600 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all">Logout</a>
+                    class="px-5 py-2.5 bg-brandMaroon/10 text-brandMaroon rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-brandMaroon hover:text-white transition-all">Logout</a>
             </div>
         </div>
     </nav>
 
     <div class="max-w-7xl mx-auto py-12 px-8">
-        <!-- Header -->
         <header class="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-16">
             <div>
-                <h1 class="text-4xl font-extrabold tracking-tight text-gray-900 mb-2">Content Management</h1>
-                <p class="text-gray-500 font-medium">Full control over all uploaded PDF flipbooks.</p>
+                <h1 class="text-4xl font-extrabold tracking-tight text-brandNavy mb-2">Platform Management</h1>
+                <p class="text-brandNavy/60 font-medium">Full control over users, limits, and uploaded flipbooks.</p>
             </div>
 
             <div class="flex items-center gap-4">
                 <button id="upload-trigger"
-                    class="px-8 py-3.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-2xl shadow-lg shadow-blue-600/20 transition-all flex items-center gap-2 active:scale-95">
+                    class="px-8 py-3.5 bg-brandNavy hover:bg-brandMaroon text-white text-sm font-bold rounded-2xl shadow-lg shadow-brandNavy/20 transition-all flex items-center gap-2 active:scale-95">
                     <i class="fas fa-plus"></i>
                     Upload New Document
                 </button>
@@ -44,92 +41,134 @@
 
         <input type="file" id="pdf-input" class="hidden" accept=".pdf">
 
-        <!-- Stats Overview -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-            <div class="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm">
-                <div class="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-4 block">Total Books</div>
+            <div class="bg-white p-8 rounded-[2rem] border border-brandNavy/5 shadow-sm">
+                <div class="text-[10px] font-black uppercase tracking-widest text-brandNavy/40 mb-4 block">Total Books</div>
                 <div class="flex items-end justify-between">
-                    <span class="text-4xl font-black text-gray-900">{{ books|length }}</span>
-                    <div class="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-500">
+                    <span class="text-4xl font-black text-brandNavy">{{ books|length }}</span>
+                    <div class="w-12 h-12 bg-brandNavy/5 rounded-2xl flex items-center justify-center text-brandNavy">
                         <i class="fas fa-book"></i>
                     </div>
                 </div>
             </div>
             
-            <div class="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm">
-                <div class="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-4 block">System Status
+            <div class="bg-white p-8 rounded-[2rem] border border-brandNavy/5 shadow-sm">
+                <div class="text-[10px] font-black uppercase tracking-widest text-brandNavy/40 mb-4 block">Total Users</div>
+                <div class="flex items-end justify-between">
+                    <span class="text-4xl font-black text-brandNavy">{{ users|length if users else 0 }}</span>
+                    <div class="w-12 h-12 bg-brandNavy/5 rounded-2xl flex items-center justify-center text-brandNavy">
+                        <i class="fas fa-users"></i>
+                    </div>
                 </div>
+            </div>
+            
+            <div class="bg-white p-8 rounded-[2rem] border border-brandNavy/5 shadow-sm flex flex-col justify-center">
+                <div class="text-[10px] font-black uppercase tracking-widest text-brandNavy/40 mb-4 block">System Status</div>
                 <div class="flex items-center gap-3">
-                    <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                    <span class="text-lg font-bold text-gray-900">Operational</span>
+                    <div class="w-3 h-3 bg-brandMaroon rounded-full animate-pulse"></div>
+                    <span class="text-lg font-bold text-brandNavy">Operational</span>
                 </div>
             </div>
         </div>
 
-        <!-- Books Table -->
-        <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
-            <div class="px-10 py-8 border-b border-gray-50 flex items-center justify-between">
-                <h3 class="text-lg font-bold text-gray-900">Document Library</h3>
+        <div class="bg-white rounded-[2.5rem] border border-brandNavy/5 shadow-sm overflow-hidden mb-12">
+            <div class="px-10 py-8 border-b border-brandNavy/5 flex items-center justify-between bg-gray-50/30">
+                <h3 class="text-lg font-bold text-brandNavy">User Management & Limits</h3>
+            </div>
+            <div class="overflow-x-auto p-6">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-brandNavy/40">ID</th>
+                            <th class="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-brandNavy/40">Username</th>
+                            <th class="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-brandNavy/40">Joined</th>
+                            <th class="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-brandNavy/40">Upload Limit</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-brandNavy/5">
+                        {% if users %}
+                            {% for user in users %}
+                            <tr class="hover:bg-brandNavy/5 transition-colors">
+                                <td class="px-4 py-4 text-sm text-brandNavy/60 font-bold">#{{ user.id }}</td>
+                                <td class="px-4 py-4 text-sm text-brandNavy font-bold">{{ user.username }}</td>
+                                <td class="px-4 py-4 text-xs text-brandNavy/50">{{ user.created_at.strftime('%Y-%m-%d') }}</td>
+                                <td class="px-4 py-4">
+                                    <form action="{{ url_for('update_user_limit') }}" method="POST" class="flex items-center gap-2">
+                                        <input type="hidden" name="user_id" value="{{ user.id }}">
+                                        <input type="number" name="limit" value="{{ user.upload_limit }}" min="0" class="w-20 bg-gray-50 border border-brandNavy/20 rounded-lg px-3 py-1.5 text-sm font-bold text-brandNavy focus:outline-none focus:border-brandNavy">
+                                        <button type="submit" class="px-4 py-1.5 bg-brandNavy text-white text-xs font-bold rounded-lg hover:bg-brandMaroon transition-colors">Save</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="4" class="px-4 py-8 text-center text-sm font-bold text-brandNavy/50">No registered users yet.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-[2.5rem] border border-brandNavy/5 shadow-sm overflow-hidden">
+            <div class="px-10 py-8 border-b border-brandNavy/5 flex items-center justify-between bg-gray-50/30">
+                <h3 class="text-lg font-bold text-brandNavy">Document Library</h3>
                 <div class="relative">
-                    <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                    <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-brandNavy/30 text-xs"></i>
                     <input type="text" id="admin-search" placeholder="Quick search..."
-                        class="bg-gray-50 border border-transparent rounded-xl pl-10 pr-4 py-2 text-xs font-medium focus:bg-white focus:border-blue-500 transition-all outline-none w-64">
+                        class="bg-white border border-brandNavy/10 rounded-xl pl-10 pr-4 py-2 text-xs font-medium focus:border-brandNavy transition-all outline-none w-64 shadow-sm text-brandNavy">
                 </div>
             </div>
 
             <div class="overflow-x-auto">
                 <table class="w-full text-left">
                     <thead>
-                        <tr class="bg-gray-50/50">
-                            <th class="px-10 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                                Document</th>
-                            <th class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Pages
-                            </th>
-                            <th class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400">Created
-                            </th>
-                            <th
-                                class="px-10 py-5 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">
-                                Actions</th>
+                        <tr class="bg-white">
+                            <th class="px-10 py-5 text-[10px] font-black uppercase tracking-widest text-brandNavy/40">Document</th>
+                            <th class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-brandNavy/40">Owner ID</th>
+                            <th class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-brandNavy/40">Pages</th>
+                            <th class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-brandNavy/40">Created</th>
+                            <th class="px-10 py-5 text-[10px] font-black uppercase tracking-widest text-brandNavy/40 text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-50">
+                    <tbody class="divide-y divide-brandNavy/5">
                         {% for book in books %}
-                        <tr class="hover:bg-gray-50/50 transition-colors group">
+                        <tr class="hover:bg-brandNavy/5 transition-colors group">
                             <td class="px-10 py-6">
                                 <div class="flex items-center gap-4">
-                                    <div
-                                        class="w-12 h-14 bg-gray-50 rounded-lg flex items-center justify-center border border-gray-100 group-hover:bg-white transition-colors">
-                                        <i class="fas fa-file-pdf text-gray-300 text-xl"></i>
+                                    <div class="w-12 h-14 bg-gray-50 rounded-lg flex items-center justify-center border border-brandNavy/10 group-hover:bg-white transition-colors">
+                                        <i class="fas fa-file-pdf text-brandNavy/30 text-xl"></i>
                                     </div>
                                     <div>
-                                        <div class="text-sm font-bold text-gray-900 mb-1 book-title">{{ book.title }}
-                                        </div>
-                                        <div class="text-[10px] font-medium text-gray-400">ID: {{ book.id }} • {{
-                                            book.filename[:20] }}...</div>
+                                        <div class="text-sm font-bold text-brandNavy mb-1 book-title">{{ book.title }}</div>
+                                        <div class="text-[10px] font-medium text-brandNavy/40">ID: {{ book.id }} • {{ book.filename[:20] }}...</div>
                                     </div>
                                 </div>
                             </td>
-                            <td class="px-6 py-6">
-                                <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black">{{
-                                    book.page_count }}</span>
+                            <td class="px-6 py-6 text-sm font-bold text-brandNavy/60">
+                                {{ book.owner_id if book.owner_id else 'Admin' }}
                             </td>
-                            <td class="px-6 py-6 text-xs text-gray-500 font-medium">
+                            <td class="px-6 py-6">
+                                <span class="px-3 py-1 bg-brandNavy/5 text-brandNavy rounded-lg text-[10px] font-black">{{ book.page_count }}</span>
+                            </td>
+                            <td class="px-6 py-6 text-xs text-brandNavy/50 font-medium">
                                 {{ book.created_at.strftime('%Y-%m-%d %H:%M') }}
                             </td>
                             <td class="px-10 py-6">
                                 <div class="flex items-center justify-end gap-2">
                                     <a href="{{ url_for('view_book', book_id=book.id) }}"
-                                        class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-all"
+                                        class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-50 text-brandNavy/40 hover:bg-brandNavy hover:text-white transition-all"
                                         title="View">
                                         <i class="fas fa-eye text-[10px]"></i>
                                     </a>
                                     <button onclick="editBook('{{ book.id }}', '{{ book.title }}')"
-                                        class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:bg-yellow-50 hover:text-yellow-600 transition-all"
+                                        class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-50 text-brandNavy/40 hover:bg-brandNavy hover:text-white transition-all"
                                         title="Rename">
                                         <i class="fas fa-pen text-[10px]"></i>
                                     </button>
                                     <button onclick="deleteBook('{{ book.id }}', this)"
-                                        class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-600 transition-all"
+                                        class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-50 text-brandNavy/40 hover:bg-brandMaroon hover:text-white transition-all"
                                         title="Delete">
                                         <i class="fas fa-trash text-[10px]"></i>
                                     </button>
@@ -143,13 +182,13 @@
 
             {% if not books %}
             <div class="py-24 text-center flex flex-col items-center justify-center">
-                <div class="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center mb-8 border border-blue-100">
-                    <i class="fas fa-cloud-upload-alt text-blue-500 text-3xl"></i>
+                <div class="w-20 h-20 bg-brandNavy/5 rounded-3xl flex items-center justify-center mb-8 border border-brandNavy/10">
+                    <i class="fas fa-cloud-upload-alt text-brandNavy text-3xl"></i>
                 </div>
-                <h3 class="text-xl font-bold text-gray-900 mb-2">No documents found</h3>
-                <p class="text-gray-400 max-w-sm mb-10">You haven't uploaded any PDF files yet. Let's get started!</p>
+                <h3 class="text-xl font-bold text-brandNavy mb-2">No documents found</h3>
+                <p class="text-brandNavy/50 max-w-sm mb-10">You haven't uploaded any PDF files yet.</p>
                 <button onclick="document.getElementById('pdf-input').click()"
-                    class="bg-blue-600 text-white px-8 py-3.5 rounded-2xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-600/20 transition-all flex items-center gap-2 active:scale-95">
+                    class="bg-brandNavy text-white px-8 py-3.5 rounded-2xl font-bold hover:bg-brandMaroon shadow-lg shadow-brandNavy/20 transition-all flex items-center gap-2 active:scale-95">
                     <i class="fas fa-plus"></i>
                     Upload Your First PDF
                 </button>
@@ -158,23 +197,16 @@
         </div>
     </div>
 
-    <!-- Upload Progress Modal (Copy from index but styled) -->
-    <div id="upload-modal"
-        class="fixed inset-0 z-[100] hidden items-center justify-center bg-gray-900/40 backdrop-blur-xl px-4">
+    <div id="upload-modal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-brandNavy/40 backdrop-blur-md px-4">
         <div class="w-full max-w-sm bg-white rounded-[3rem] p-12 text-center shadow-2xl border border-white">
-            <div
-                class="w-24 h-24 bg-blue-50 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 border border-blue-100 shadow-sm relative overflow-hidden">
-                <i class="fas fa-cloud-upload-alt text-4xl text-blue-500 relative z-10"></i>
-                <div id="progress-circle"
-                    class="absolute bottom-0 left-0 right-0 bg-blue-100 transition-all duration-300" style="height: 0%">
-                </div>
+            <div class="w-24 h-24 bg-brandNavy/5 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 border border-brandNavy/10 shadow-sm relative overflow-hidden">
+                <i class="fas fa-cloud-upload-alt text-4xl text-brandNavy relative z-10"></i>
+                <div id="progress-circle" class="absolute bottom-0 left-0 right-0 bg-brandMaroon/20 transition-all duration-300" style="height: 0%"></div>
             </div>
-            <h3 class="text-2xl font-black text-gray-900 mb-3 tracking-tight">Syncing PDF</h3>
-            <p id="progress-text" class="text-xs font-black text-blue-600 uppercase tracking-widest mb-4">Starting: 0%
-            </p>
+            <h3 class="text-2xl font-black text-brandNavy mb-3 tracking-tight">Syncing PDF</h3>
+            <p id="progress-text" class="text-xs font-black text-brandNavy/60 uppercase tracking-widest mb-4">Starting: 0%</p>
             <div class="relative w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div id="progress-bar"
-                    class="absolute inset-0 bg-blue-500 w-0 transition-all duration-500 rounded-full"></div>
+                <div id="progress-bar" class="absolute inset-0 bg-brandMaroon w-0 transition-all duration-500 rounded-full"></div>
             </div>
         </div>
     </div>
@@ -247,7 +279,7 @@
                 method: 'DELETE'
             });
             if (response.ok) {
-                btn.closest('tr').remove();
+                window.location.reload();
             } else {
                 alert('Failed to delete book');
             }
@@ -277,10 +309,9 @@
         }
     }
 
-    // Search functionality
     document.getElementById('admin-search').addEventListener('input', function (e) {
         const term = e.target.value.toLowerCase();
-        document.querySelectorAll('tbody tr').forEach(row => {
+        document.querySelectorAll('tbody tr.group').forEach(row => {
             const title = row.querySelector('.book-title').innerText.toLowerCase();
             row.style.display = title.includes(term) ? '' : 'none';
         });

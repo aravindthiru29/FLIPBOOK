@@ -1,44 +1,51 @@
 {% extends "base.html" %}
+{% block title %}Admin Portal - Book Buddy{% endblock %}
+
 {% block content %}
-<div class="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
-    <div class="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-white p-12 transition-all hover:shadow-blue-500/5">
+<div class="min-h-[80vh] flex items-center justify-center px-4 py-12 relative overflow-hidden">
+    
+    <div class="absolute top-0 right-0 -mr-32 -mt-32 w-[500px] h-[500px] rounded-full bg-brandMaroon/5 blur-[100px] pointer-events-none"></div>
+    <div class="absolute bottom-0 left-0 -ml-32 -mb-32 w-[400px] h-[400px] rounded-full bg-brandNavy/5 blur-[100px] pointer-events-none"></div>
+
+    <div class="max-w-md w-full bg-white rounded-[3rem] shadow-[0_20px_60px_rgb(22,32,84,0.05)] border border-brandNavy/5 p-10 sm:p-12 relative z-10 transition-all duration-500 hover:shadow-[0_20px_60px_rgb(22,32,84,0.08)]">
+        
         <div class="text-center mb-10">
-            <div class="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-600/20">
-                <i class="fas fa-user-shield text-white text-3xl"></i>
+            <div class="w-20 h-20 bg-brandMaroon/10 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-inner border border-brandMaroon/20">
+                <i class="fa-solid fa-shield-halved text-brandMaroon text-3xl"></i>
             </div>
-            <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight mb-2">Admin Login</h1>
-            <p class="text-gray-500 font-medium">Restricted Access Area</p>
+            <h1 class="text-3xl font-serif font-bold text-brandNavy tracking-tight mb-2">Admin Portal</h1>
+            <p class="text-brandNavy/50 font-medium text-sm">Secure restricted access area</p>
         </div>
 
         <form method="POST" class="space-y-6">
             <div>
-                <label for="password" class="block text-xs font-black uppercase tracking-widest text-gray-400 mb-3 ml-1">Admin Password</label>
-                <div class="relative">
-                    <i class="fas fa-lock absolute left-5 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                <label for="password" class="block text-[10px] font-bold uppercase tracking-widest text-brandNavy/50 mb-3 ml-1">Master Password</label>
+                <div class="relative group">
+                    <i class="fa-solid fa-lock absolute left-5 top-1/2 -translate-y-1/2 text-brandNavy/30 group-focus-within:text-brandMaroon transition-colors"></i>
                     <input type="password" name="password" id="password" required
-                        class="w-full bg-gray-50 border-2 border-transparent focus:border-blue-500 focus:bg-white rounded-2xl py-4 pl-14 pr-6 outline-none transition-all font-medium text-gray-900"
+                        class="w-full bg-[#F8FAFC] border border-brandNavy/10 focus:border-brandMaroon focus:ring-4 focus:ring-brandMaroon/10 focus:bg-white rounded-2xl py-4 pl-14 pr-6 outline-none transition-all font-medium text-brandNavy placeholder-brandNavy/30"
                         placeholder="••••••••">
                 </div>
             </div>
 
             {% if error %}
-            <div class="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-bold flex items-center gap-3 animate-shake">
-                <i class="fas fa-exclamation-circle"></i>
+            <div class="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-medium flex items-center gap-3 animate-shake border border-red-100 shadow-sm">
+                <i class="fa-solid fa-circle-exclamation shrink-0"></i>
                 {{ error }}
             </div>
             {% endif %}
 
             <button type="submit"
-                class="w-full bg-gray-900 hover:bg-black text-white py-4 rounded-2xl font-bold shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 group">
-                Access Dashboard
-                <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+                class="w-full bg-brandNavy hover:bg-brandMaroon text-white py-4 rounded-2xl font-bold shadow-xl shadow-brandNavy/10 transition-all duration-300 active:scale-[0.98] flex items-center justify-center gap-3 group">
+                Authenticate
+                <i class="fa-solid fa-arrow-right-to-bracket text-sm group-hover:translate-x-1 transition-transform"></i>
             </button>
         </form>
 
-        <div class="mt-10 pt-8 border-t border-gray-100 text-center">
-            <a href="{{ url_for('index') }}" class="text-xs font-bold text-gray-400 hover:text-blue-600 transition-colors uppercase tracking-widest flex items-center justify-center gap-2">
-                <i class="fas fa-chevron-left"></i>
-                Back to Site
+        <div class="mt-10 pt-8 border-t border-brandNavy/5 text-center">
+            <a href="{{ url_for('index') }}" class="text-[10px] font-bold text-brandNavy/40 hover:text-brandMaroon transition-colors uppercase tracking-widest flex items-center justify-center gap-2 w-max mx-auto">
+                <i class="fa-solid fa-chevron-left"></i>
+                Return to Site
             </a>
         </div>
     </div>

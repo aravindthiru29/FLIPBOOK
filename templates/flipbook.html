@@ -1,173 +1,200 @@
 {% extends "base.html" %}
+
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='flipbook-viewer.css') }}?v={{ range(1000, 9999)|random }}">
+<style>
+    /* 1. COMPLETELY HIDE THE BASE.HTML HEADER AND FOOTER */
+    nav, footer { 
+        display: none !important; 
+    }
+    
+    /* 2. LOCK THE BODY TO PREVENT SCROLLING */
+    html, body {
+        margin: 0;
+        padding: 0;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        background-color: #F8FAFC;
+    }
+
+    /* Safe transitions for the immersive reading UI */
+    .reader-ui {
+        transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+    }
+    .ui-hidden {
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+    .ui-hidden.top-ui { transform: translateY(-10px); }
+    .ui-hidden.bottom-ui { transform: translateY(10px) translateX(-50%); }
+    .ui-hidden.side-ui-left { transform: translateX(-10px) translateY(-50%); }
+    .ui-hidden.side-ui-right { transform: translateX(10px) translateY(-50%); }
+</style>
 {% endblock %}
+
 {% block content %}
-<div class="min-h-screen flex flex-col bg-[#d1d5db] font-sans selection:bg-blue-100 overflow-hidden">
-    <!-- Premium Header -->
-    <div class="px-8 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between z-50 bg-white/80 backdrop-blur-md shadow-sm">
-        <div class="flex items-center space-x-4 min-w-0 w-full md:w-auto md:flex-1">
-            <a href="/" class="text-gray-400 hover:text-gray-900 transition-colors">
-                <i class="fas fa-arrow-left"></i>
+<div class="fixed inset-0 z-[100] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-100 via-slate-200 to-slate-300 font-sans selection:bg-brandNavy/20 overflow-hidden" id="immersive-wrapper">
+    
+    <div class="reader-ui top-ui absolute top-0 left-0 right-0 h-auto sm:h-16 px-4 sm:px-6 py-3 sm:py-0 flex flex-col sm:flex-row sm:items-center justify-between bg-white/90 backdrop-blur-xl border-b border-brandNavy/10 shadow-sm z-50">
+        
+        <div class="flex items-center gap-4 min-w-0 mb-3 sm:mb-0 flex-1">
+            <a href="{{ url_for('dashboard') }}" class="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 text-brandNavy/50 hover:bg-brandNavy hover:text-white transition-all duration-300 shadow-sm shrink-0">
+                <i class="fa-solid fa-arrow-left"></i>
             </a>
-            <h1 class="text-sm font-bold text-gray-800 truncate min-w-0 max-w-full md:max-w-[400px]">
+            <h1 class="text-base sm:text-lg font-serif font-bold text-brandNavy truncate tracking-tight pr-4 drop-shadow-sm">
                 {{ book_data.title }}
             </h1>
         </div>
-        <div class="flex items-center justify-end gap-2 md:space-x-6 shrink-0">
-            <div class="flex items-center flex-wrap justify-end px-2 md:px-4 py-1.5 md:py-2 bg-gray-100 rounded-full gap-2 md:gap-4 border border-gray-200 max-w-full">
+        
+        <div class="flex items-center justify-end gap-2 sm:gap-3 shrink-0">
+            <div class="flex items-center bg-white rounded-2xl border border-brandNavy/10 p-1 shadow-sm h-10">
+                <button id="zoom-out-btn" class="w-8 h-full rounded-lg text-brandNavy/40 hover:bg-slate-50 hover:text-brandMaroon transition-all duration-300 flex items-center justify-center" title="Zoom Out">
+                    <i class="fa-solid fa-magnifying-glass-minus text-sm"></i>
+                </button>
+                <button id="zoom-in-btn" class="w-8 h-full rounded-lg text-brandNavy/40 hover:bg-slate-50 hover:text-brandMaroon transition-all duration-300 flex items-center justify-center" title="Zoom In">
+                    <i class="fa-solid fa-magnifying-glass-plus text-sm"></i>
+                </button>
+
+                <div class="w-px h-5 bg-brandNavy/10 mx-1 hidden sm:block"></div>
+
                 {% if can_annotate %}
-                <!-- Annotation Tools -->
-                <button id="note-mode-btn" onclick="toggleMode('note')"
-                    class="text-gray-500 hover:text-yellow-600 transition-colors" title="Add Note">
-                    <i class="fas fa-sticky-note"></i>
+                <button id="note-mode-btn" onclick="toggleMode('note')" class="w-8 h-full rounded-lg text-brandNavy/40 hover:bg-slate-50 hover:text-brandNavy transition-all duration-300 flex items-center justify-center hidden sm:flex" title="Add Note">
+                    <i class="fa-solid fa-note-sticky text-sm"></i>
                 </button>
-                <button id="highlight-mode-btn" onclick="toggleMode('highlight')"
-                    class="text-gray-500 hover:text-yellow-600 transition-colors" title="Highlight">
-                    <i class="fas fa-highlighter"></i>
+                <button id="highlight-mode-btn" onclick="toggleMode('highlight')" class="w-8 h-full rounded-lg text-brandNavy/40 hover:bg-slate-50 hover:text-brandNavy transition-all duration-300 flex items-center justify-center hidden sm:flex" title="Highlight">
+                    <i class="fa-solid fa-highlighter text-sm"></i>
                 </button>
-                <!-- Highlight Color Picker -->
-                <div id="color-picker" class="flex items-center space-x-2 px-2 hidden">
-                    <button onclick="setHighlightColor('yellow')"
-                        class="w-6 h-6 rounded-full bg-yellow-300 border-2 border-yellow-500 hover:border-yellow-700 transition-all ring-2 ring-offset-2 ring-gray-700"
-                        title="Yellow" id="color-yellow"></button>
-                    <button onclick="setHighlightColor('green')"
-                        class="w-6 h-6 rounded-full bg-green-300 border-2 border-green-500 hover:border-green-700 transition-all"
-                        title="Green" id="color-green"></button>
-                    <button onclick="setHighlightColor('pink')"
-                        class="w-6 h-6 rounded-full bg-pink-300 border-2 border-pink-500 hover:border-pink-700 transition-all"
-                        title="Pink" id="color-pink"></button>
-                    <button onclick="setHighlightColor('blue')"
-                        class="w-6 h-6 rounded-full bg-blue-300 border-2 border-blue-500 hover:border-blue-700 transition-all"
-                        title="Blue" id="color-blue"></button>
+                
+                <div id="color-picker" class="items-center space-x-1.5 px-2 hidden border-l border-brandNavy/10 ml-1 pl-2">
+                    <button onclick="setHighlightColor('yellow')" class="w-4 h-4 rounded-full bg-yellow-300 shadow-sm hover:scale-125 transition-transform" id="color-yellow"></button>
+                    <button onclick="setHighlightColor('green')" class="w-4 h-4 rounded-full bg-green-300 shadow-sm hover:scale-125 transition-transform" id="color-green"></button>
+                    <button onclick="setHighlightColor('pink')" class="w-4 h-4 rounded-full bg-pink-300 shadow-sm hover:scale-125 transition-transform" id="color-pink"></button>
+                    <button onclick="setHighlightColor('blue')" class="w-4 h-4 rounded-full bg-blue-300 shadow-sm hover:scale-125 transition-transform" id="color-blue"></button>
                 </div>
-                <div class="w-px h-4 bg-gray-300 hidden sm:block"></div>
+                <div class="w-px h-5 bg-brandNavy/10 mx-1 hidden sm:block"></div>
                 {% endif %}
 
-                <button onclick="toggleWarmth()" class="text-gray-500 hover:text-orange-600 transition-colors hidden sm:block"
-                    title="Reading Mode">
-                    <i class="fas fa-eye"></i>
+                <button onclick="shareBook('{{ book_data.id }}')" class="w-8 h-full rounded-lg text-brandNavy/40 hover:bg-slate-50 hover:text-brandMaroon transition-all duration-300 hidden sm:flex items-center justify-center" title="Share Flipbook">
+                    <i class="fa-solid fa-share-nodes text-sm"></i>
                 </button>
-                <div class="w-px h-4 bg-gray-300 hidden sm:block"></div>
-                <div class="text-[11px] font-black text-gray-500 uppercase tracking-widest">
-                    <span id="current-pages-range" class="text-blue-600">1</span> / {{ book_data.page_count }}
-                </div>
             </div>
-            <button id="fullscreen-btn" class="p-2 text-gray-400 hover:text-gray-900 transition-colors hidden sm:block">
-                <i class="fas fa-expand"></i>
+            
+            <button id="fullscreen-btn" class="w-10 h-10 flex items-center justify-center rounded-xl bg-brandNavy text-white hover:bg-brandMaroon transition-all duration-300 shadow-md hidden sm:flex" title="Toggle Fullscreen">
+                <i class="fa-solid fa-expand"></i>
             </button>
         </div>
     </div>
 
-    <!-- Flipbook Workspace -->
-    <div
-        class="flex-1 relative flex items-center justify-center p-4 md:p-12 overflow-hidden bg-gradient-to-b from-[#e5e7eb] to-[#d1d5db]">
-        <!-- Navigation Arrows -->
-        <button id="prev-btn"
-            class="absolute left-6 md:left-12 z-40 w-16 h-16 rounded-full bg-white/20 hover:bg-white/90 text-gray-400 hover:text-gray-900 shadow-xl transition-all active:scale-95 hidden md:flex items-center justify-center backdrop-blur-sm group">
-            <i class="fas fa-chevron-left text-2xl group-hover:-translate-x-1 transition-transform"></i>
+    <div class="absolute inset-0 flex items-center justify-center p-2 sm:p-8 md:p-12 overflow-hidden z-10" id="reading-container">
+        
+        <button id="prev-btn" class="reader-ui side-ui-left absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-40 w-14 h-14 rounded-full bg-white/80 hover:bg-brandNavy text-brandNavy hover:text-white shadow-xl backdrop-blur-md transition-colors duration-300 active:scale-90 hidden md:flex items-center justify-center border border-brandNavy/5">
+            <i class="fa-solid fa-chevron-left text-xl"></i>
         </button>
 
-        <button id="next-btn"
-            class="absolute right-6 md:right-12 z-40 w-16 h-16 rounded-full bg-white/20 hover:bg-white/90 text-gray-400 hover:text-gray-900 shadow-xl transition-all active:scale-95 hidden md:flex items-center justify-center backdrop-blur-sm group">
-            <i class="fas fa-chevron-right text-2xl group-hover:translate-x-1 transition-transform"></i>
+        <button id="next-btn" class="reader-ui side-ui-right absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-40 w-14 h-14 rounded-full bg-white/80 hover:bg-brandNavy text-brandNavy hover:text-white shadow-xl backdrop-blur-md transition-colors duration-300 active:scale-90 hidden md:flex items-center justify-center border border-brandNavy/5">
+            <i class="fa-solid fa-chevron-right text-xl"></i>
         </button>
 
-        <!-- Mobile Navigation Controls -->
-        <div class="md:hidden fixed bottom-8 left-0 right-0 z-50 flex justify-center space-x-4">
-            <button id="mobile-prev-btn" class="w-12 h-12 rounded-full bg-white/90 shadow-lg flex items-center justify-center text-gray-700 active:scale-95">
-                <i class="fas fa-chevron-left"></i>
-            </button>
-            <button id="mobile-next-btn" class="w-12 h-12 rounded-full bg-white/90 shadow-lg flex items-center justify-center text-gray-700 active:scale-95">
-                <i class="fas fa-chevron-right"></i>
-            </button>
-        </div>
-        <div id="flipbook-loading" class="loading-popup" role="status" aria-live="polite">
-            <div class="loading-popup-card">
-                <div class="loading-spinner" aria-hidden="true"></div>
-                <div class="loading-copy">
-                    <p class="loading-eyebrow">Preparing Flipbook</p>
-                    <h2>Loading pages for a smoother read</h2>
-                    <p>The PDF is being opened and the first pages are rendering now.</p>
-                </div>
+        <div id="flipbook-loading" class="absolute inset-0 z-50 flex items-center justify-center bg-[#F8FAFC]/95 backdrop-blur-sm transition-opacity duration-500" role="status">
+            <div class="bg-white p-10 rounded-[2.5rem] shadow-2xl border border-brandNavy/5 text-center max-w-sm flex flex-col items-center">
+                <div class="w-16 h-16 border-4 border-brandNavy/10 border-t-brandMaroon rounded-full animate-spin mb-6"></div>
+                <p class="text-[10px] font-bold text-brandMaroon uppercase tracking-[0.2em] mb-2">Preparing Engine</p>
+                <h2 class="text-xl font-serif font-bold text-brandNavy mb-2">Rendering 3D Pages</h2>
+                <p class="text-sm font-medium text-brandNavy/60">Your flipbook is being constructed for a seamless reading experience.</p>
             </div>
         </div>
-        <!-- The Book Architecture -->
-        <div id="book-viewport" class="relative group">
-            <!-- Shadow Depth -->
-            <div class="absolute inset-0 -bottom-12 bg-black/40 blur-[60px] rounded-[100px] scale-x-90 opacity-40">
-            </div>
-            <div id="flipbook-outer">
-                <!-- Binding/Spine Detail -->
-                <div class="book-spine">
-                    <div class="spine-thread"></div>
-                    <div class="spine-thread"></div>
-                    <div class="spine-thread"></div>
+
+        <div id="book-viewport" class="relative group transition-transform duration-500 ease-out w-full max-w-6xl h-full max-h-[90vh] flex justify-center items-center">
+            <div class="absolute inset-0 -bottom-16 bg-brandNavy/20 blur-[80px] rounded-[100px] scale-x-95 opacity-50 mix-blend-multiply pointer-events-none transition-all duration-500 group-hover:opacity-70"></div>
+            
+            <div id="flipbook-outer" class="relative z-10 shadow-2xl">
+                <div class="book-spine bg-gradient-to-r from-brandNavy via-[#0f163b] to-brandNavy shadow-inner">
+                    <div class="spine-thread bg-white/20"></div>
+                    <div class="spine-thread bg-white/20"></div>
+                    <div class="spine-thread bg-white/20"></div>
                 </div>
+                
                 <div id="flipbook">
-                    <!-- Front Cover -->
-                    <div class="hardcover front-cover">
-                        <div class="cover-content">
-                            <div class="gold-emboss mb-4">
-                                <i class="fas fa-book-open text-4xl"></i>
+                    <div class="hardcover front-cover bg-brandNavy relative overflow-hidden">
+                        <div class="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMDUiLz4KPC9zdmc+')]"></div>
+                        <div class="cover-content absolute inset-0 flex flex-col items-center justify-center p-8 z-10">
+                            <div class="mb-8 text-brandMaroon drop-shadow-md">
+                                <i class="fa-solid fa-book-open-reader text-6xl"></i>
                             </div>
-                            <h2 class="text-xl font-serif font-bold text-center px-8">{{ book_data.title }}</h2>
-                            <div
-                                class="mt-12 text-[10px] uppercase tracking-[0.3em] opacity-40 font-bold border-t border-white/20 pt-4">
-                                Interactive Edition
-                            </div>
+                            <h2 class="text-2xl sm:text-3xl font-serif font-bold text-center px-4 text-white drop-shadow-sm leading-tight">{{ book_data.title }}</h2>
+                            <div class="mt-16 text-[10px] uppercase tracking-[0.4em] text-brandMaroon font-bold border-t border-brandMaroon/30 pt-6">Interactive Edition</div>
                         </div>
                     </div>
-                    <!-- Page 1 (Internal Cover or Table of Contents) -->
-                    <div class="page first-internal" data-page="0">
-                        <div class="page-texture"></div>
+                    
+                    <div class="page first-internal bg-white" data-page="0">
+                        <div class="absolute inset-0 pointer-events-none opacity-50 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjMDAwIiBmaWxsLW9wYWNpdHk9IjAuMDIiLz4KPC9zdmc+')]"></div>
                         <canvas data-pdf-page="0" class="pdf-page-canvas w-full h-full object-contain"></canvas>
                         <div class="annotations-layer absolute inset-0 z-20"></div>
                     </div>
-                    <!-- All Remaining PDF Pages -->
+                    
                     {% for i in range(1, book_data.page_count) %}
-                    <div class="page" data-page="{{ i }}">
-                        <div class="page-texture"></div>
-                        <canvas data-pdf-page="{{ i }}"
-                            class="pdf-page-canvas w-full h-full object-contain opacity-0 transition-opacity duration-700"></canvas>
-                        <div class="page-number text-[10px] text-gray-400 font-mono absolute bottom-4 right-4">{{ i + 1 }}</div>
+                    <div class="page bg-white" data-page="{{ i }}">
+                        <div class="absolute inset-0 pointer-events-none opacity-50 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjMDAwIiBmaWxsLW9wYWNpdHk9IjAuMDIiLz4KPC9zdmc+')]"></div>
+                        <canvas data-pdf-page="{{ i }}" class="pdf-page-canvas w-full h-full object-contain opacity-0 transition-opacity duration-700 ease-in-out"></canvas>
+                        <div class="text-[9px] text-brandNavy/30 font-bold absolute bottom-4 right-5">{{ i + 1 }}</div>
                         <div class="annotations-layer absolute inset-0 z-20"></div>
                     </div>
                     {% endfor %}
-                    <!-- Optional Blank Page if count is odd (to keep back cover on the right side) -->
+                    
                     {% if (book_data.page_count + 1) % 2 != 0 %}
-                    <div class="page blank-page">
-                        <div class="page-texture"></div>
-                        <div class="w-full h-full bg-white"></div>
+                    <div class="page blank-page bg-white">
+                        <div class="absolute inset-0 pointer-events-none opacity-50 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjMDAwIiBmaWxsLW9wYWNpdHk9IjAuMDIiLz4KPC9zdmc+')]"></div>
                     </div>
                     {% endif %}
-                    <!-- Back Cover -->
-                    <div class="hardcover back-cover">
-                        <div class="w-full h-full flex flex-col items-center justify-center space-y-4">
-                            <div class="w-12 h-1 bg-white/20 rounded-full"></div>
-                            <div class="text-[11px] font-black tracking-widest uppercase opacity-30">The End</div>
-                            <div class="w-12 h-1 bg-white/20 rounded-full"></div>
+                    
+                    <div class="hardcover back-cover bg-brandNavy relative overflow-hidden">
+                        <div class="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMDUiLz4KPC9zdmc+')]"></div>
+                        <div class="w-full h-full flex flex-col items-center justify-center space-y-6 relative z-10">
+                            <div class="w-16 h-0.5 bg-brandMaroon rounded-full opacity-50"></div>
+                            <div class="text-xs font-bold tracking-[0.5em] uppercase text-brandPaper/50">The End</div>
+                            <div class="w-16 h-0.5 bg-brandMaroon rounded-full opacity-50"></div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+    
+    <div class="reader-ui bottom-ui fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex justify-center items-center bg-white/95 backdrop-blur-md px-2 py-2 rounded-full shadow-2xl border border-brandNavy/10 gap-2 w-max mx-auto">
+        <button id="mobile-prev-btn" class="w-12 h-12 rounded-full bg-slate-50 hover:bg-brandNavy hover:text-white transition-colors flex items-center justify-center text-brandNavy active:scale-95 shadow-inner md:hidden">
+            <i class="fa-solid fa-chevron-left"></i>
+        </button>
+        <div class="px-4 text-xs font-bold text-brandNavy/50 tracking-widest uppercase">
+            <span id="current-pages-range" class="text-brandMaroon mr-1">1</span> / {{ book_data.page_count }}
+        </div>
+        <button id="mobile-next-btn" class="w-12 h-12 rounded-full bg-slate-50 hover:bg-brandNavy hover:text-white transition-colors flex items-center justify-center text-brandNavy active:scale-95 shadow-inner md:hidden">
+            <i class="fa-solid fa-chevron-right"></i>
+        </button>
+    </div>
+
+    <div id="toast" class="fixed bottom-8 right-8 z-[200] transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+        <div class="bg-brandNavy text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-brandNavy/80">
+            <div class="w-8 h-8 bg-brandMaroon rounded-full flex items-center justify-center shadow-inner">
+                <i class="fa-solid fa-check text-xs text-white"></i>
+            </div>
+            <span id="toast-message" class="text-sm font-medium">Link copied!</span>
+        </div>
+    </div>
 </div>
-<!-- Page Turn Sound Effect -->
-<audio id="page-turn-sound-1" preload="auto">
-    <source src="/static/sounds/page-turn.wav" type="audio/wav">
-</audio>
-<audio id="page-turn-sound-2" preload="auto">
-    <source src="/static/sounds/page-turn.wav" type="audio/wav">
-</audio>
+
+<audio id="page-turn-sound-1" preload="auto"><source src="/static/sounds/page-turn.wav" type="audio/wav"></audio>
+<audio id="page-turn-sound-2" preload="auto"><source src="/static/sounds/page-turn.wav" type="audio/wav"></audio>
 {% endblock %}
+
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/turn.js/3/turn.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
 <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
     const WINDOW_BOOK_DATA = {
         id: '{{ book_data.id }}',
         page_count: '{{ book_data.page_count }}',
@@ -175,6 +202,107 @@
         is_admin: '{{ "true" if session.get("is_admin") else "false" }}' === 'true',
         can_annotate: '{{ "true" if can_annotate else "false" }}' === 'true'
     };
+
+    function showToast(message) {
+        const toast = document.getElementById('toast');
+        const toastMsg = document.getElementById('toast-message');
+        if(toast && toastMsg) {
+            toastMsg.innerText = message;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => { toast.classList.add('translate-y-20', 'opacity-0'); }, 3000);
+        }
+    }
+
+    function shareBook(bookId) {
+        const url = `${window.location.origin}/book/${bookId}`;
+        navigator.clipboard.writeText(url).then(() => {
+            showToast('Share link copied!');
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+            alert('Shareable URL: ' + url);
+        });
+    }
+    
+    // UI Auto-Hide Logic
+    let uiTimeout;
+    const uiElements = document.querySelectorAll('.reader-ui');
+
+    function showUI() {
+        uiElements.forEach(el => el.classList.remove('ui-hidden'));
+        resetUITimeout();
+    }
+
+    function hideUI() {
+        uiElements.forEach(el => el.classList.add('ui-hidden'));
+    }
+
+    function resetUITimeout() {
+        clearTimeout(uiTimeout);
+        uiTimeout = setTimeout(hideUI, 2500); 
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        
+        // Hide base header/footer via DOM as a fallback backup measure
+        const baseNav = document.querySelector('nav');
+        const baseFooter = document.querySelector('footer');
+        if (baseNav) baseNav.style.display = 'none';
+        if (baseFooter) baseFooter.style.display = 'none';
+
+        // Auto-Hide Triggers
+        document.addEventListener('mousemove', showUI);
+        document.addEventListener('touchstart', showUI);
+        document.addEventListener('keydown', showUI);
+        resetUITimeout();
+
+        // Zoom logic
+        const zoomInBtn = document.getElementById('zoom-in-btn');
+        const zoomOutBtn = document.getElementById('zoom-out-btn');
+        const viewport = document.getElementById('book-viewport');
+        let currentScale = 1;
+
+        if(zoomInBtn && zoomOutBtn && viewport) {
+            zoomInBtn.addEventListener('click', () => {
+                if(currentScale < 2.5) {
+                    currentScale += 0.15;
+                    viewport.style.transform = `scale(${currentScale})`;
+                }
+            });
+            zoomOutBtn.addEventListener('click', () => {
+                if(currentScale > 0.5) {
+                    currentScale -= 0.15;
+                    viewport.style.transform = `scale(${currentScale})`;
+                }
+            });
+        }
+
+        // Native Fullscreen API Logic
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        if(fullscreenBtn) {
+            fullscreenBtn.addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                        console.log(`Error attempting to enable fullscreen: ${err.message}`);
+                    });
+                    fullscreenBtn.innerHTML = '<i class="fa-solid fa-compress"></i>';
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                        fullscreenBtn.innerHTML = '<i class="fa-solid fa-expand"></i>';
+                    }
+                }
+            });
+        }
+        
+        // Clear Loading Screen
+        setTimeout(() => {
+            const loader = document.getElementById('flipbook-loading');
+            if (loader) {
+                loader.style.opacity = '0';
+                setTimeout(() => { loader.style.display = 'none'; }, 500);
+            }
+        }, 1500);
+    });
 </script>
 <script src="{{ url_for('static', filename='flipbook-viewer.js') }}?v={{ range(1000, 9999)|random }}"></script>
 {% endblock %}
