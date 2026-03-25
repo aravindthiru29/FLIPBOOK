@@ -18,7 +18,7 @@ from sqlalchemy import inspect, text
 app = Flask(__name__)
 
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-123')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'bookbuddyadmin@123')
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
