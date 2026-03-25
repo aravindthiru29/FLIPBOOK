@@ -78,7 +78,6 @@ class User(db.Model):
     upload_limit = db.Column(db.Integer, default=3, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     books = db.relationship('Book', backref='owner', lazy=True)
-
 class Book(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(255), nullable=False)
@@ -89,7 +88,6 @@ class Book(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     notes = db.relationship('Note', backref='book', lazy=True, cascade="all, delete-orphan")
     highlights = db.relationship('Highlight', backref='book', lazy=True, cascade="all, delete-orphan")
-
 class ShareToken(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     token = db.Column(db.String(64), unique=True, nullable=False, index=True)
@@ -99,7 +97,6 @@ class ShareToken(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     book = db.relationship('Book', backref='share_tokens')
     created_by = db.relationship('User')
-
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     book_id = db.Column(db.Integer, db.ForeignKey('book.id'), nullable=False)
@@ -108,7 +105,6 @@ class Note(db.Model):
     x = db.Column(db.Float)
     y = db.Column(db.Float)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
 class Highlight(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     book_id = db.Column(db.Integer, db.ForeignKey('book.id'), nullable=False)
@@ -116,12 +112,10 @@ class Highlight(db.Model):
     coordinates = db.Column(db.JSON, nullable=False)
     color = db.Column(db.String(50), default='yellow')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
 def ensure_db_updates():
     inspector = inspect(db.engine)
     book_cols = {column['name'] for column in inspector.get_columns('book')}
     user_cols = {column['name'] for column in inspector.get_columns('user')}
-    
     with db.engine.begin() as connection:
         if 'pdf_data' not in book_cols:
             col_type = 'BYTEA' if db.engine.dialect.name == 'postgresql' else 'BLOB'
@@ -131,7 +125,6 @@ def ensure_db_updates():
         if 'upload_limit' not in user_cols:
             table_name = '"user"' if db.engine.dialect.name == 'postgresql' else 'user'
             connection.execute(text(f'ALTER TABLE {table_name} ADD COLUMN upload_limit INTEGER DEFAULT 3 NOT NULL'))
-
 def init_db():
     global _db_initialized, _db_error
     if _db_initialized:

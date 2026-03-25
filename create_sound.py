@@ -46,7 +46,6 @@ def create_page_turn_sound(filename, duration=0.2):
         wav_file.writeframes(b''.join(frames))
     print(f"Created page turn sound: {filename}")
     print(f"  Duration: {duration}s, Sample rate: {sample_rate} Hz")
-
 if __name__ == '__main__':
     # Create the sounds directory if it doesn't exist
     sounds_dir = os.path.join('static', 'sounds')
